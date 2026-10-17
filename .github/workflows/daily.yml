@@ -6,30 +6,50 @@ on:
   # announcement window closes without sitting in the weekday API rush.
   schedule: [{cron: "0 5 * * 1-5"}]
   workflow_dispatch:
-  push:
-  pull_request:
+
+# Checks live in ci.yml. This workflow only delivers, so a push or pull request
+# cannot accidentally send a card.
+permissions:
+  contents: read
+
+concurrency:
+  # A manual run and the cron must not deliver at the same time.
+  group: paperfeed-delivery
+  cancel-in-progress: false
 
 jobs:
-  run:
+  deliver:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v4.4.0
+      - uses: astral-sh/setup-uv@v5.4.2
       - run: uv sync --locked
-      - run: uv run ruff check
-      - run: uv run ruff format --check
-      - run: uv run mypy
-      - run: uv run pytest -q
       - run: uv run paperfeed
-        # Delivery needs repository secrets, so only the cron and manual runs send.
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
+          # Secrets.
           PAPERFEED_ZOTERO__USER_ID: ${{ secrets.ZOTERO_ID }}
           PAPERFEED_ZOTERO__API_KEY: ${{ secrets.ZOTERO_KEY }}
           PAPERFEED_BAILIAN__API_KEY: ${{ secrets.BAILIAN_KEY }}
           PAPERFEED_FEISHU__WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK }}
-          PAPERFEED_BAILIAN__BASE_URL: ${{ vars.PF_BAILIAN_BASE_URL }}
-          PAPERFEED_ZOTERO__COLLECTION: ${{ vars.PF_COLLECTION }}
-          PAPERFEED_ZOTERO__NOTE_TITLE: ${{ vars.PF_NOTE_TITLE }}
-          PAPERFEED_ARXIV__CATEGORIES: ${{ vars.PF_ARXIV_CATEGORIES }}
+
+          # Optional settings: repository variable names match .env.example.
+          # Unset means the default.
+          PAPERFEED_ZOTERO__LIBRARY_TYPE: ${{ vars.PAPERFEED_ZOTERO__LIBRARY_TYPE }}
+          PAPERFEED_ZOTERO__COLLECTION: ${{ vars.PAPERFEED_ZOTERO__COLLECTION }}
+          PAPERFEED_ZOTERO__NOTE_TITLE: ${{ vars.PAPERFEED_ZOTERO__NOTE_TITLE }}
+          PAPERFEED_ARXIV__CATEGORIES: ${{ vars.PAPERFEED_ARXIV__CATEGORIES }}
+          PAPERFEED_ARXIV__ANNOUNCE_TYPES: ${{ vars.PAPERFEED_ARXIV__ANNOUNCE_TYPES }}
+          PAPERFEED_ARXIV__MAX_CANDIDATES: ${{ vars.PAPERFEED_ARXIV__MAX_CANDIDATES }}
+          PAPERFEED_BAILIAN__BASE_URL: ${{ vars.PAPERFEED_BAILIAN__BASE_URL }}
+          PAPERFEED_BAILIAN__DECISION_MODEL: ${{ vars.PAPERFEED_BAILIAN__DECISION_MODEL }}
+          PAPERFEED_BAILIAN__CHAT_MODEL: ${{ vars.PAPERFEED_BAILIAN__CHAT_MODEL }}
+          PAPERFEED_BAILIAN__DECISION_CONCURRENCY: ${{ vars.PAPERFEED_BAILIAN__DECISION_CONCURRENCY }}
+          PAPERFEED_BAILIAN__CHAT_CONCURRENCY: ${{ vars.PAPERFEED_BAILIAN__CHAT_CONCURRENCY }}
+          PAPERFEED_BAILIAN__CHAT_EXTRA_BODY: ${{ vars.PAPERFEED_BAILIAN__CHAT_EXTRA_BODY }}
+          PAPERFEED_FEISHU__CARD_COLOR: ${{ vars.PAPERFEED_FEISHU__CARD_COLOR }}
+          PAPERFEED_MAX_PAPERS: ${{ vars.PAPERFEED_MAX_PAPERS }}
+          PAPERFEED_MIN_SCORE: ${{ vars.PAPERFEED_MIN_SCORE }}
+          PAPERFEED_AVOID_PENALTY: ${{ vars.PAPERFEED_AVOID_PENALTY }}
+          PAPERFEED_LANGUAGE: ${{ vars.PAPERFEED_LANGUAGE }}
+          PAPERFEED_DEBUG: ${{ vars.PAPERFEED_DEBUG }}

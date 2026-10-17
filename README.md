@@ -134,13 +134,16 @@ Push the repo, then add:
 | Secret | `ZOTERO_KEY` | Zotero API key |
 | Secret | `BAILIAN_KEY` | Model Studio API key |
 | Secret | `FEISHU_WEBHOOK` | custom-bot webhook URL |
-| Variable | `PF_BAILIAN_BASE_URL` | optional; defaults to the public DashScope-compatible endpoint. Set your workspace host if your models are not public. |
-| Variable | `PF_COLLECTION` | e.g. `paperfeed/interests` |
-| Variable | `PF_NOTE_TITLE` | e.g. `paperfeed profile` |
-| Variable | `PF_ARXIV_CATEGORIES` | JSON list, e.g. `["cond-mat.str-el","quant-ph"]` |
+| Variable | `PAPERFEED_BAILIAN__BASE_URL` | optional; defaults to the public DashScope-compatible endpoint. Set your workspace host if your models are not public. |
+| Variable | `PAPERFEED_ZOTERO__COLLECTION` | e.g. `paperfeed/interests` |
+| Variable | `PAPERFEED_ZOTERO__NOTE_TITLE` | e.g. `paperfeed profile` |
+| Variable | `PAPERFEED_ARXIV__CATEGORIES` | JSON list, e.g. `["cond-mat.str-el","quant-ph"]` |
 
-Run the workflow once by hand (`workflow_dispatch`) and confirm the card renders
-before trusting the 05:00 UTC cron.
+`ci.yml` runs lint, formatting, type checks, and tests on every push and pull
+request. `daily.yml` runs the real feed at 05:00 UTC Monday–Friday and on manual
+`workflow_dispatch`; it never runs on pushes, so a push cannot send a card. Run
+the daily workflow once by hand and confirm the card renders before trusting the
+cron.
 
 ## Tuning
 
