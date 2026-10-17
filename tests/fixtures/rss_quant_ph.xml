@@ -1,0 +1,61 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rss xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+  <channel>
+    <title>quant-ph updates on arXiv.org</title>
+    <link>http://rss.arxiv.org/rss/quant-ph</link>
+    <description>quant-ph updates on the arXiv.org e-print archive.</description>
+    <language>en-us</language>
+    <lastBuildDate>Fri, 16 Oct 2026 04:00:02 +0000</lastBuildDate>
+
+    <item>
+      <title>Entanglement scaling in a two-dimensional Fermi gas &amp; its tensor-network representation</title>
+      <link>https://arxiv.org/abs/2410.01234</link>
+      <description>arXiv:2410.01234v1 Announce Type: new 
+Abstract: We compute the second Renyi entropy of a two-dimensional Fermi gas
+using a tensor-network ansatz, and show that the area law holds up to a
+logarithmic correction.</description>
+      <guid isPermaLink="false">https://arxiv.org/abs/2410.01234</guid>
+      <category>quant-ph</category>
+      <pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>new</arxiv:announce_type>
+      <dc:creator>Ana Author, Bo Author, Cy Author, Di Author</dc:creator>
+    </item>
+
+    <item>
+      <title>Quantum Monte Carlo study of a frustrated spin ladder</title>
+      <link>https://arxiv.org/abs/2410.05678v2</link>
+      <description>arXiv:2410.05678v2 Announce Type: cross 
+Abstract: We map out the phase diagram of a frustrated two-leg spin ladder with
+sign-problem-free quantum Monte Carlo and identify a dimerized phase.</description>
+      <guid isPermaLink="false">https://arxiv.org/abs/2410.05678</guid>
+      <category>cond-mat.str-el</category>
+      <pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>cross</arxiv:announce_type>
+      <dc:creator>Eve Author</dc:creator>
+    </item>
+
+    <item>
+      <title>Replacement of a previous tensor-network preprint</title>
+      <link>https://arxiv.org/abs/2410.09012</link>
+      <description>arXiv:2410.09012v3 Announce Type: replace 
+Abstract: This is a replacement.</description>
+      <guid isPermaLink="false">https://arxiv.org/abs/2410.09012</guid>
+      <category>quant-ph</category>
+      <pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>replace</arxiv:announce_type>
+      <dc:creator>Frank Author</dc:creator>
+    </item>
+
+    <item>
+      <title>Cross-list replacement of a device-engineering paper</title>
+      <link>https://arxiv.org/abs/2410.11111</link>
+      <description>arXiv:2410.11111v2 Announce Type: replace-cross 
+Abstract: This is a cross-list replacement.</description>
+      <guid isPermaLink="false">https://arxiv.org/abs/2410.11111</guid>
+      <category>cond-mat.mes-hall</category>
+      <pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>replace-cross</arxiv:announce_type>
+      <dc:creator>Gina Author</dc:creator>
+    </item>
+  </channel>
+</rss>

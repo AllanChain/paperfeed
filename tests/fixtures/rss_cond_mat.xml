@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rss xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+  <channel>
+    <title>cond-mat.str-el updates on arXiv.org</title>
+    <link>http://rss.arxiv.org/rss/cond-mat.str-el</link>
+    <description>cond-mat.str-el updates on the arXiv.org e-print archive.</description>
+    <language>en-us</language>
+    <lastBuildDate>Fri, 16 Oct 2026 04:00:02 +0000</lastBuildDate>
+
+    <item>
+      <title>Quantum Monte Carlo study of a frustrated spin ladder</title>
+      <link>https://arxiv.org/abs/2410.05678v2</link>
+      <description>arXiv:2410.05678v2 Announce Type: cross 
+Abstract: We map out the phase diagram of a frustrated two-leg spin ladder with
+sign-problem-free quantum Monte Carlo and identify a dimerized phase.</description>
+      <guid isPermaLink="false">https://arxiv.org/abs/2410.05678</guid>
+      <category>cond-mat.str-el</category>
+      <pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>cross</arxiv:announce_type>
+      <dc:creator>Eve Author</dc:creator>
+    </item>
+
+    <item>
+      <title>Dynamical mean-field theory for a Hund's metal</title>
+      <link>https://arxiv.org/abs/2410.22222</link>
+      <description>arXiv:2410.22222v1 Announce Type: new 
+Abstract: We solve a multiorbital impurity problem with dynamical mean-field theory
+and locate the Hund's-metal crossover.</description>
+      <guid isPermaLink="false">https://arxiv.org/abs/2410.22222</guid>
+      <category>cond-mat.str-el</category>
+      <pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>new</arxiv:announce_type>
+      <dc:creator>Hana Author, Ivan Author</dc:creator>
+    </item>
+
+    <item>
+      <title>An announcement with no abstract at all</title>
+      <link>https://arxiv.org/abs/2410.33333</link>
+      <description>arXiv:2410.33333v1 Announce Type: new</description>
+      <guid isPermaLink="false">https://arxiv.org/abs/2410.33333</guid>
+      <category>cond-mat.str-el</category>
+      <pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>new</arxiv:announce_type>
+      <dc:creator>Jo Author</dc:creator>
+    </item>
+  </channel>
+</rss>

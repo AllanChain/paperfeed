@@ -1,0 +1,35 @@
+name: daily
+
+on:
+  # arXiv announces Sun–Thu ~20:00 ET = 00:00–01:00 UTC, so the batch lands
+  # overnight UTC. 05:00 UTC is hours later, Mon–Fri, and runs after the
+  # announcement window closes without sitting in the weekday API rush.
+  schedule: [{cron: "0 5 * * 1-5"}]
+  workflow_dispatch:
+  push:
+  pull_request:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+      - run: uv run pytest -q
+      - run: uv run paperfeed
+        # Delivery needs repository secrets, so only the cron and manual runs send.
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          PAPERFEED_ZOTERO__USER_ID: ${{ secrets.ZOTERO_ID }}
+          PAPERFEED_ZOTERO__API_KEY: ${{ secrets.ZOTERO_KEY }}
+          PAPERFEED_BAILIAN__API_KEY: ${{ secrets.BAILIAN_KEY }}
+          PAPERFEED_FEISHU__WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK }}
+          PAPERFEED_BAILIAN__BASE_URL: ${{ vars.PF_BAILIAN_BASE_URL }}
+          PAPERFEED_ZOTERO__COLLECTION: ${{ vars.PF_COLLECTION }}
+          PAPERFEED_ZOTERO__NOTE_TITLE: ${{ vars.PF_NOTE_TITLE }}
+          PAPERFEED_ARXIV__CATEGORIES: ${{ vars.PF_ARXIV_CATEGORIES }}

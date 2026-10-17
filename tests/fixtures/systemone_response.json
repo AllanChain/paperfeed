@@ -1,0 +1,18 @@
+{
+  "answers": {
+    "relevance": {
+      "type": "score",
+      "score": 2.25,
+      "probabilities": {"0": 0.02, "1": 0.11, "2": 0.47, "3": 0.40},
+      "confidence": 0.83,
+      "legend": {
+        "0": "Unrelated: outside the reader's Focus and sharing neither Topics nor Methods",
+        "1": "Adjacent: same broad field or one shared Method, but not a question the reader works on",
+        "2": "Relevant: a Method from the profile applied to a Topic from the profile",
+        "3": "Core: a central Focus topic attacked with a central Method"
+      }
+    },
+    "avoid": {"type": "noul", "noul": 0.04}
+  },
+  "usage": {"input_tokens": 612}
+}

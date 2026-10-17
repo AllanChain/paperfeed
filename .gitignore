@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+
+# This repo keeps its agent guide in-tree despite a global AGENTS.md ignore.
+!AGENTS.md
