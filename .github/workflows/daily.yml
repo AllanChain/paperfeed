@@ -20,7 +20,8 @@ concurrency:
 jobs:
   deliver:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Ranking (300 calls) + one 12k-55k-token chat call per kept paper.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4.4.0
       - uses: astral-sh/setup-uv@v5.4.2
@@ -41,6 +42,9 @@ jobs:
           PAPERFEED_ARXIV__CATEGORIES: ${{ vars.PAPERFEED_ARXIV__CATEGORIES }}
           PAPERFEED_ARXIV__ANNOUNCE_TYPES: ${{ vars.PAPERFEED_ARXIV__ANNOUNCE_TYPES }}
           PAPERFEED_ARXIV__MAX_CANDIDATES: ${{ vars.PAPERFEED_ARXIV__MAX_CANDIDATES }}
+          PAPERFEED_FULL_TEXT__ENABLED: ${{ vars.PAPERFEED_FULL_TEXT__ENABLED }}
+          PAPERFEED_FULL_TEXT__MAX_CHARS: ${{ vars.PAPERFEED_FULL_TEXT__MAX_CHARS }}
+          PAPERFEED_FULL_TEXT__CONCURRENCY: ${{ vars.PAPERFEED_FULL_TEXT__CONCURRENCY }}
           PAPERFEED_BAILIAN__BASE_URL: ${{ vars.PAPERFEED_BAILIAN__BASE_URL }}
           PAPERFEED_BAILIAN__DECISION_MODEL: ${{ vars.PAPERFEED_BAILIAN__DECISION_MODEL }}
           PAPERFEED_BAILIAN__CHAT_MODEL: ${{ vars.PAPERFEED_BAILIAN__CHAT_MODEL }}

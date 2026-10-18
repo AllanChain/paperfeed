@@ -22,7 +22,10 @@ GitHub Actions cron. No server, no database, no state.
    questions: relevance as a 4-level `score` (expected level index ÷ 3) and
    `avoid` as a `noul` probability. `final = max(0, relevance − 0.5 · P(avoid))`.
 4. **Describe** — one chat call per kept paper, prompted with the note's `Focus`
-   and `Style`, so the paragraph reads as if written for this reader.
+   and `Style`, so the paragraph reads as if written for this reader. Every kept
+   paper first gets its **full text** fetched from arXiv's HTML rendering
+   (`arxiv.org/html/<id>`); the description prompt then carries the whole body, so
+   the paragraph can name the actual result instead of restating the abstract.
 5. **Deliver** — one Feishu `interactive` card. If nothing clears `min_score`, no
    message is sent. arXiv titles arrive with LaTeX shards and `lark_md` has no
    LaTeX, so math is rendered as Unicode on the way in (`La$_6$Ni$_5$O$_{12}$` →
@@ -153,6 +156,8 @@ cron.
 | `PAPERFEED_MIN_SCORE` | relevance threshold after the avoid penalty (default 0.60 ≈ level 1.8 of 3) |
 | `PAPERFEED_AVOID_PENALTY` | weight of `P(avoid)` (default 0.5) |
 | `PAPERFEED_ARXIV__MAX_CANDIDATES` | candidate cap before scoring (default 300) |
+| `PAPERFEED_FULL_TEXT__ENABLED` | fetch the body of every kept paper for its description (default `true`) |
+| `PAPERFEED_FULL_TEXT__MAX_CHARS` | pathological-paper guard (default 350000 ≈ 100k tokens); real bodies are 12k–55k tokens |
 | note `Topics` / `Methods` / `Avoid` | the ranking rubric itself |
 | note `Style` | the description rubric itself |
 
@@ -172,6 +177,7 @@ knob; the criteria wording is the lever, so tighten the levels before raising
 | `--check` says `profile note has no non-empty 'Focus' section` | the note was pasted as plain text or raw HTML, so Zotero lost the headings; copy the rendered template from the dropdown instead |
 | `--check` chat fails with 400 | your model id rejects `chat_extra_body`; set `PAPERFEED_BAILIAN__CHAT_EXTRA_BODY={}` |
 | A run keeps nothing | `min_score` too high for the profile, or the note's `Topics` are too narrow |
+| A description reads like the abstract | that paper has no arXiv HTML (`arxiv.org/html/<id>` 404s). arXiv renders HTML only for LaTeX submissions it converted successfully — roughly one paper in six — and the description falls back to the abstract |
 
 ## Development
 
@@ -182,9 +188,9 @@ uv run mypy
 uv run pytest -q
 ```
 
-Tests never touch the network: RSS, the profile note and a recorded System One
-response live in `tests/fixtures/`. `PAPERFEED_DEBUG=true` trims ranking to 10
-candidates and turns on verbose logging.
+Tests never touch the network: RSS, the profile note, an arXiv HTML page and a
+recorded System One response live in `tests/fixtures/`. `PAPERFEED_DEBUG=true`
+trims ranking to 10 candidates and turns on verbose logging.
 
 ## License
 

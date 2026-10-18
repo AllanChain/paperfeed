@@ -3,6 +3,10 @@
 `paperfeed`              fetch → rank → describe → send
 `paperfeed --dry-run`    the same, printing the card JSON instead of sending
 `paperfeed --check`      prove the host, key, model ids and Zotero access work
+
+The step between rank and describe is a full-text fetch for the papers that
+survive `select_top`: the card holds at most `max_papers` (default 10) papers, so
+ten HTML pages a day is cheap, and ranking never sees them.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from typing import Any
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
-from . import arxiv_source, describe, doctor, feishu, rank
+from . import arxiv_source, describe, doctor, feishu, full_text, rank
 from .config import ConfigError, Settings
 from .errors import PaperfeedError
 from .zotero import load_profile
@@ -81,7 +85,7 @@ def _build(settings: Settings) -> dict[str, Any] | None:
 
     described = describe.describe_all(
         profile,
-        kept,
+        full_text.attach(kept, settings=settings.full_text),
         settings=settings.bailian,
         fallback_language=settings.language,
     )

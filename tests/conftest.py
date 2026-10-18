@@ -10,6 +10,7 @@ import pytest
 
 from paperfeed.arxiv_source import Paper
 from paperfeed.config import Settings
+from paperfeed.full_text import Sourced
 from paperfeed.profile_note import Profile, parse_profile
 from paperfeed.rank import ScoredPaper
 
@@ -70,6 +71,11 @@ def make_scored(final: float = 0.81, **overrides: Any) -> ScoredPaper:
     }
     fields.update(overrides)
     return ScoredPaper(**fields)
+
+
+def make_sourced(final: float = 0.81, full_text: str | None = None, **overrides: Any) -> Sourced:
+    scored = make_scored(final=final, **overrides)
+    return Sourced(scored=scored, full_text=full_text)
 
 
 @pytest.fixture

@@ -9,6 +9,7 @@ from paperfeed import main
 from paperfeed.config import Settings
 from paperfeed.describe import Described
 from paperfeed.doctor import CheckResult
+from paperfeed.full_text import Sourced
 from paperfeed.profile_note import ProfileError, parse_profile
 
 
@@ -27,6 +28,9 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> dict:
     )
     monkeypatch.setattr(main.arxiv_source, "fetch", lambda _arxiv: [paper])
     monkeypatch.setattr(main.rank, "rank", lambda *_a, **_k: [scored])
+    monkeypatch.setattr(
+        main.full_text, "attach", lambda scored, **_k: [Sourced(item) for item in scored]
+    )
     monkeypatch.setattr(main.describe, "describe_all", lambda *_a, **_k: [described])
     monkeypatch.setattr(main.feishu, "send", lambda url, message: sent.append((url, message)))
 
@@ -64,6 +68,34 @@ def test_failed_descriptions_send_nothing(wired, monkeypatch) -> None:
     monkeypatch.setattr(main.describe, "describe_all", lambda *_a, **_k: [])
     assert main.run([]) == 0
     assert wired["sent"] == []
+
+
+def test_every_kept_paper_gets_a_full_text_fetch(wired, monkeypatch) -> None:
+    kept = [
+        make_scored(paper=make_paper(arxiv_id=f"2410.0000{n}", title=f"paper {n}"), final=0.7)
+        for n in (1, 2, 3)
+    ]
+    monkeypatch.setattr(main.rank, "rank", lambda *_a, **_k: kept)
+    seen: list[list[str]] = []
+
+    def attach(scored, **_kwargs):
+        seen.append([item.paper.arxiv_id for item in scored])
+        return [Sourced(item, "body text") for item in scored]
+
+    monkeypatch.setattr(main.full_text, "attach", attach)
+
+    assert main.run(["--dry-run"]) == 0
+    assert seen == [["2410.00001", "2410.00002", "2410.00003"]]
+
+
+def test_low_scoring_papers_get_no_full_text(wired, monkeypatch) -> None:
+    weak = make_scored(paper=wired["paper"], final=0.1)
+    monkeypatch.setattr(main.rank, "rank", lambda *_a, **_k: [weak])
+    seen: list[list] = []
+    monkeypatch.setattr(main.full_text, "attach", lambda scored, **_k: seen.append(scored) or [])
+
+    assert main.run([]) == 0
+    assert seen == []
 
 
 def test_missing_settings_exit_code(monkeypatch, caplog) -> None:

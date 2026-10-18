@@ -33,6 +33,16 @@ class ArxivSettings(BaseModel):
     max_candidates: int = 300
 
 
+class FullTextSettings(BaseModel):
+    # The body of every paper that reaches the card, for the description only.
+    enabled: bool = True
+    # A guard for pathological papers, not a working limit: measured arXiv bodies
+    # run 12k-55k tokens, and ~3.5 chars/token puts 100k tokens near this cap.
+    max_chars: int = 350_000
+    concurrency: int = 2
+    timeout: float = 60.0
+
+
 class BailianSettings(BaseModel):
     base_url: str = DEFAULT_BAILIAN_BASE_URL
     api_key: SecretStr | None = None
@@ -62,6 +72,7 @@ class Settings(BaseSettings):
 
     zotero: ZoteroSettings = Field(default_factory=ZoteroSettings)
     arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
+    full_text: FullTextSettings = Field(default_factory=FullTextSettings)
     bailian: BailianSettings = Field(default_factory=BailianSettings)
     feishu: FeishuSettings = Field(default_factory=FeishuSettings)
 

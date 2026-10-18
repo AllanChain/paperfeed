@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import make_paper, make_scored, make_settings
+from conftest import make_paper, make_settings, make_sourced
 from paperfeed import describe
 from paperfeed.describe import (
     build_system_prompt,
@@ -35,6 +35,28 @@ def test_user_prompt_has_title_and_abstract(profile: Profile) -> None:
     prompt = build_user_prompt(make_paper())
     assert "Title: Entanglement scaling" in prompt
     assert "Abstract: We compute the second Renyi entropy" in prompt
+    assert "Full text:" not in prompt
+
+
+def test_user_prompt_carries_the_body_when_there_is_one() -> None:
+    prompt = build_user_prompt(make_paper(), "Body prose that the abstract lacks.")
+    assert "Abstract: We compute the second Renyi entropy" in prompt
+    assert prompt.endswith("Full text:\nBody prose that the abstract lacks.")
+
+
+def test_full_text_prompt_asks_for_the_actual_result(profile: Profile) -> None:
+    abstract_only = build_system_prompt(profile, "English")
+    with_body = build_system_prompt(profile, "English", full_text=True)
+
+    assert "full text" not in abstract_only
+    assert "full text" in with_body
+    assert "actual finding" in with_body
+    # Nothing else about the contract changes: drop the inserted lines and the
+    # prompt is byte-identical to the abstract-only one.
+    assert "60-90 words" in with_body
+    assert profile.focus in with_body
+    inserted = with_body[with_body.index("You are given") : with_body.index("Never mention")]
+    assert with_body.replace(inserted, "") == abstract_only
 
 
 def test_clean_strips_quotes_markdown_and_whitespace() -> None:
@@ -60,9 +82,9 @@ def test_describe_all_drops_failed_papers(
     monkeypatch.setattr(describe.bailian, "chat", fake_chat)
 
     scored = [
-        make_scored(paper=make_paper(arxiv_id="2410.00001", title="good paper one")),
-        make_scored(paper=make_paper(arxiv_id="2410.00002", title="bad paper")),
-        make_scored(paper=make_paper(arxiv_id="2410.00003", title="good paper two")),
+        make_sourced(final=0.81, paper=make_paper(arxiv_id="2410.00001", title="good paper one")),
+        make_sourced(final=0.72, paper=make_paper(arxiv_id="2410.00002", title="bad paper")),
+        make_sourced(final=0.66, paper=make_paper(arxiv_id="2410.00003", title="good paper two")),
     ]
 
     described = describe_all(
@@ -74,6 +96,39 @@ def test_describe_all_drops_failed_papers(
 
     assert [item.paper.title for item in described] == ["good paper one", "good paper two"]
     assert described[0].description == "A crisp summary."
+    assert described[0].score == pytest.approx(0.81)
+
+
+def test_describe_all_picks_the_prompt_per_paper(
+    monkeypatch: pytest.MonkeyPatch, profile: Profile
+) -> None:
+    monkeypatch.setattr(
+        describe.bailian,
+        "openai_client",
+        lambda _settings: SimpleNamespace(close=lambda: None),
+    )
+    seen: dict[str, str] = {}
+
+    def fake_chat(_settings, *, system, user, max_tokens, client=None):
+        seen[user.split("\n")[0]] = system
+        return "A crisp summary."
+
+    monkeypatch.setattr(describe.bailian, "chat", fake_chat)
+
+    describe_all(
+        profile,
+        [
+            make_sourced(
+                paper=make_paper(arxiv_id="2410.00001", title="with body"), full_text="x" * 10
+            ),
+            make_sourced(paper=make_paper(arxiv_id="2410.00002", title="abstract only")),
+        ],
+        settings=make_settings().bailian,
+        fallback_language="English",
+    )
+
+    assert "full text" in seen["Title: with body"]
+    assert "full text" not in seen["Title: abstract only"]
 
 
 def test_describe_all_with_nothing_kept() -> None:
