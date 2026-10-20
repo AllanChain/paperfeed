@@ -23,7 +23,10 @@ from .text import collapse_whitespace
 
 log = logging.getLogger(__name__)
 
-RSS_URL = "https://export.arxiv.org/rss/{category}"
+# rss.arxiv.org, not export.arxiv.org: the export host fronts the same document
+# with a long-lived Fastly cache and was seen serving an entry-less channel for
+# hours after the 00:00 ET rebuild, which reads as "no papers today".
+RSS_URL = "https://rss.arxiv.org/rss/{category}"
 ARXIV_URL = "https://arxiv.org/abs/{arxiv_id}"
 ANNOUNCE_RE = re.compile(r"Announce Type:\s*([a-z-]+)", re.IGNORECASE)
 VERSION_RE = re.compile(r"v\d+$")
