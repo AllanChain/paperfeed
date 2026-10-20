@@ -143,10 +143,11 @@ Push the repo, then add:
 | Variable | `PAPERFEED_ARXIV__CATEGORIES` | JSON list, e.g. `["cond-mat.str-el","quant-ph"]` |
 
 `ci.yml` runs lint, formatting, type checks, and tests on every push and pull
-request. `daily.yml` runs the real feed at 05:00 UTC Monday–Friday and on manual
-`workflow_dispatch`; it never runs on pushes, so a push cannot send a card. Run
-the daily workflow once by hand and confirm the card renders before trusting the
-cron.
+request. `daily.yml` runs the real feed at 00:15 ET Monday–Friday — arXiv
+regenerates its RSS/listings at midnight ET, and the `timezone` key follows
+daylight saving — and on manual `workflow_dispatch`; it never runs on pushes, so
+a push cannot send a card. Run the daily workflow once by hand and confirm the
+card renders before trusting the cron.
 
 ## Tuning
 

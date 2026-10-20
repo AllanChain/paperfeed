@@ -1,10 +1,12 @@
 name: daily
 
 on:
-  # arXiv announces Sun–Thu ~20:00 ET = 00:00–01:00 UTC, so the batch lands
-  # overnight UTC. 05:00 UTC is hours later, Mon–Fri, and runs after the
-  # announcement window closes without sitting in the weekday API rush.
-  schedule: [{cron: "0 5 * * 1-5"}]
+  # arXiv's announcement email goes out Sun–Thu 20:00 ET, but the RSS and HTML
+  # listings are regenerated at midnight ET. 00:15 ET Mon–Fri gives the feed
+  # time to settle; `timezone` follows EST/EDT automatically.
+  schedule:
+    - cron: "15 0 * * 1-5"
+      timezone: "America/New_York"
   workflow_dispatch:
 
 # Checks live in ci.yml. This workflow only delivers, so a push or pull request
