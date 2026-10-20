@@ -19,7 +19,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> dict:
     settings = make_settings()
     paper = make_paper(arxiv_id="2410.00001", title="paper a")
     scored = make_scored(paper=paper, final=0.8)
-    described = Described(scored=scored, description="A crisp summary.")
+    described = Described(paper=paper, score=0.8, description="A crisp summary.")
     sent: list[tuple[str, dict]] = []
 
     monkeypatch.setattr(main, "Settings", lambda: settings)

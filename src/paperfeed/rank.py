@@ -9,21 +9,15 @@ numbers, so no response parsing or prompt-and-pray scaling is involved.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 from typing import Any
 
-import httpx
 from pydantic import BaseModel, ConfigDict
 
 from .arxiv_source import Paper
-from .bailian import decide
+from .bailian import Bailian
 from .concurrency import map_bounded
-from .config import BailianSettings
 from .profile_note import Profile
-
-DecideFn = Callable[[BailianSettings, dict[str, Any], httpx.Client | None], dict[str, Any]]
 
 log = logging.getLogger(__name__)
 
@@ -70,8 +64,8 @@ class ScoredPaper:
     final: float
 
 
-def clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
-    return max(low, min(high, value))
+def clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
 
 
 def relevance_instructions(profile: Profile) -> str:
@@ -97,9 +91,8 @@ def avoid_instructions(profile: Profile) -> str:
     return "Topics this reader does not want: " + "; ".join(profile.avoid)
 
 
-def build_payload(profile: Profile, paper: Paper, model: str) -> dict[str, Any]:
+def build_payload(profile: Profile, paper: Paper) -> dict[str, Any]:
     return {
-        "model": model,
         "state": {
             "title": paper.title,
             "abstract": paper.abstract,
@@ -122,30 +115,28 @@ def build_payload(profile: Profile, paper: Paper, model: str) -> dict[str, Any]:
 
 def relevance_from(answer: dict[str, Any]) -> float:
     """score is the expected level index, already interpolated between levels."""
-    return clamp(ScoreAnswer.model_validate(answer).score / (LEVEL_COUNT - 1))
+    return clamp01(ScoreAnswer.model_validate(answer).score / (LEVEL_COUNT - 1))
 
 
 def avoid_from(answer: dict[str, Any]) -> float:
-    return clamp(NoulAnswer.model_validate(answer).noul)
+    return clamp01(NoulAnswer.model_validate(answer).noul)
 
 
 def final_score(relevance: float, avoid: float, penalty: float) -> float:
-    return clamp(max(0.0, relevance - penalty * avoid))
+    return clamp01(relevance - penalty * avoid)
 
 
 def score_paper(
     profile: Profile,
     paper: Paper,
     *,
-    settings: BailianSettings,
+    bailian: Bailian,
     avoid_penalty: float,
-    decide_fn: DecideFn = decide,
-    client: httpx.Client | None = None,
 ) -> ScoredPaper:
     """Score one paper. Any failure scores 0.0 — never invent a judgement."""
-    payload = build_payload(profile, paper, settings.decision_model)
+    payload = build_payload(profile, paper)
     try:
-        response = decide_fn(settings, payload, client)
+        response = bailian.decide(payload)
         answers = response["answers"]
         relevance = relevance_from(answers["relevance"])
         avoid = avoid_from(answers["avoid"])
@@ -170,25 +161,18 @@ def rank(
     profile: Profile,
     papers: list[Paper],
     *,
-    settings: BailianSettings,
+    bailian: Bailian,
     avoid_penalty: float,
-    decide_fn: DecideFn = decide,
+    concurrency: int,
 ) -> list[ScoredPaper]:
     """Score every candidate concurrently; return sorted best-first."""
     if not papers:
         return []
 
-    with httpx.Client() as client:
-        worker = partial(
-            score_paper,
-            profile,
-            settings=settings,
-            avoid_penalty=avoid_penalty,
-            decide_fn=decide_fn,
-            client=client,
-        )
-        scored = map_bounded(worker, papers, limit=settings.decision_concurrency)
+    def score(paper: Paper) -> ScoredPaper:
+        return score_paper(profile, paper, bailian=bailian, avoid_penalty=avoid_penalty)
 
+    scored = map_bounded(score, papers, limit=concurrency)
     scored.sort(key=lambda item: (-item.final, -item.relevance, item.paper.arxiv_id))
     return scored
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from pyzotero import Zotero
+
 from .config import ZoteroSettings
 from .profile_note import Profile, ProfileError, note_title_from_html, parse_profile
 from .text import collapse_whitespace
@@ -121,15 +123,11 @@ def resolve_collection(library: Any, target: str) -> str:
 
 
 def make_library(settings: ZoteroSettings) -> Any:
-    from pyzotero import zotero  # imported lazily so tests need no credentials
-
     if not settings.user_id:
         raise ProfileError("PAPERFEED_ZOTERO__USER_ID is not set")
     if settings.api_key is None:
         raise ProfileError("PAPERFEED_ZOTERO__API_KEY is not set")
-    return zotero.Zotero(
-        settings.user_id, settings.library_type, settings.api_key.get_secret_value()
-    )
+    return Zotero(settings.user_id, settings.library_type, settings.api_key.get_secret_value())
 
 
 def load_profile(settings: ZoteroSettings, library: Any | None = None) -> Profile:

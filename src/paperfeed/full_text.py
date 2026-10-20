@@ -23,7 +23,7 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
-from . import USER_AGENT
+from . import USER_AGENT, net
 from .arxiv_source import Paper
 from .concurrency import map_bounded
 from .config import FullTextSettings
@@ -51,10 +51,6 @@ class Sourced:
     @property
     def paper(self) -> Paper:
         return self.scored.paper
-
-    @property
-    def score(self) -> float:
-        return self.scored.final
 
 
 def _alttext(tag: Any) -> str:
@@ -88,14 +84,11 @@ def fetch_text(
 ) -> str | None:
     """Best-effort body text. Every failure is a missing body, never a failed run."""
     url = HTML_URL.format(arxiv_id=paper.arxiv_id)
-    http = client or httpx
     try:
-        response = http.get(
-            url,
-            headers={"User-Agent": USER_AGENT},
-            timeout=settings.timeout,
-            follow_redirects=True,
-        )
+        with net.open_client(
+            headers={"User-Agent": USER_AGENT}, timeout=settings.timeout, reuse=client
+        ) as http:
+            response = http.get(url, follow_redirects=True)
     except httpx.HTTPError as exc:
         log.info(
             "%s: no full text (%s: %s); describing the abstract",
@@ -140,7 +133,7 @@ def attach(scored: Sequence[ScoredPaper], *, settings: FullTextSettings) -> list
         log.info("full text disabled; describing abstracts only")
         return [Sourced(item) for item in scored]
 
-    with httpx.Client(headers={"User-Agent": USER_AGENT}) as client:
+    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=settings.timeout) as client:
         texts = map_bounded(
             lambda item: fetch_text(item.paper, settings=settings, client=client),
             scored,

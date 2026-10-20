@@ -88,16 +88,11 @@ def build_message(card: dict[str, Any]) -> dict[str, Any]:
 
 def send(url: str, message: dict[str, Any], *, client: httpx.Client | None = None) -> None:
     """POST the card once. Retrying could deliver the same card twice."""
-    try:
-        response = net.post_once(
-            url,
-            message,
-            headers={"User-Agent": USER_AGENT},
-            timeout=TIMEOUT,
-            client=client,
-        )
-    except net.Transient as exc:
-        raise FeishuError(str(exc)) from exc
+    with net.open_client(headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT, reuse=client) as http:
+        try:
+            response = net.post_once(http, url, message)
+        except net.Transient as exc:
+            raise FeishuError(str(exc)) from exc
 
     if response.status_code >= 400:
         raise FeishuError(f"HTTP {response.status_code}: {response.text[:300]}")

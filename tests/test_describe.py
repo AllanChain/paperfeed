@@ -5,8 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import make_paper, make_settings, make_sourced
-from paperfeed import describe
+from conftest import make_paper, make_sourced
 from paperfeed.describe import (
     build_system_prompt,
     build_user_prompt,
@@ -14,6 +13,11 @@ from paperfeed.describe import (
     describe_all,
 )
 from paperfeed.profile_note import Profile
+
+
+def _bailian(chat):
+    """The one method describe.py needs from a Bailian."""
+    return SimpleNamespace(chat=chat)
 
 
 def test_system_prompt_carries_the_profile(profile: Profile) -> None:
@@ -65,21 +69,11 @@ def test_clean_strips_quotes_markdown_and_whitespace() -> None:
     assert clean("\u201cquoted\u201d") == "quoted"
 
 
-def test_describe_all_drops_failed_papers(
-    monkeypatch: pytest.MonkeyPatch, profile: Profile
-) -> None:
-    monkeypatch.setattr(
-        describe.bailian,
-        "openai_client",
-        lambda _settings: SimpleNamespace(close=lambda: None),
-    )
-
-    def fake_chat(_settings, *, system, user, max_tokens, client=None):
+def test_describe_all_drops_failed_papers(profile: Profile) -> None:
+    def fake_chat(*, system, user, max_tokens):
         if "bad paper" in user:
             raise RuntimeError("upstream refused")
         return '"A crisp summary."'
-
-    monkeypatch.setattr(describe.bailian, "chat", fake_chat)
 
     scored = [
         make_sourced(final=0.81, paper=make_paper(arxiv_id="2410.00001", title="good paper one")),
@@ -90,8 +84,9 @@ def test_describe_all_drops_failed_papers(
     described = describe_all(
         profile,
         scored,
-        settings=make_settings().bailian,
+        bailian=_bailian(fake_chat),
         fallback_language="English",
+        concurrency=2,
     )
 
     assert [item.paper.title for item in described] == ["good paper one", "good paper two"]
@@ -99,21 +94,12 @@ def test_describe_all_drops_failed_papers(
     assert described[0].score == pytest.approx(0.81)
 
 
-def test_describe_all_picks_the_prompt_per_paper(
-    monkeypatch: pytest.MonkeyPatch, profile: Profile
-) -> None:
-    monkeypatch.setattr(
-        describe.bailian,
-        "openai_client",
-        lambda _settings: SimpleNamespace(close=lambda: None),
-    )
+def test_describe_all_picks_the_prompt_per_paper(profile: Profile) -> None:
     seen: dict[str, str] = {}
 
-    def fake_chat(_settings, *, system, user, max_tokens, client=None):
+    def fake_chat(*, system, user, max_tokens):
         seen[user.split("\n")[0]] = system
         return "A crisp summary."
-
-    monkeypatch.setattr(describe.bailian, "chat", fake_chat)
 
     describe_all(
         profile,
@@ -123,8 +109,9 @@ def test_describe_all_picks_the_prompt_per_paper(
             ),
             make_sourced(paper=make_paper(arxiv_id="2410.00002", title="abstract only")),
         ],
-        settings=make_settings().bailian,
+        bailian=_bailian(fake_chat),
         fallback_language="English",
+        concurrency=2,
     )
 
     assert "full text" in seen["Title: with body"]
@@ -135,8 +122,9 @@ def test_describe_all_with_nothing_kept() -> None:
     described = describe_all(
         object(),  # never touched
         [],
-        settings=make_settings().bailian,
+        bailian=object(),  # never touched
         fallback_language="English",
+        concurrency=1,
     )
     assert described == []
 

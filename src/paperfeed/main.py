@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
 from . import arxiv_source, describe, doctor, feishu, full_text, rank
+from .bailian import Bailian
 from .config import ConfigError, Settings
 from .errors import PaperfeedError
 from .zotero import load_profile
@@ -57,7 +58,7 @@ def _configure_logging(debug: bool) -> None:
     )
 
 
-def _build(settings: Settings) -> dict[str, Any] | None:
+def _build(settings: Settings, bailian: Bailian) -> dict[str, Any] | None:
     """Run the feed pipeline. Returns the card message, or None when nothing is sent."""
     profile = load_profile(settings.zotero)
 
@@ -69,8 +70,9 @@ def _build(settings: Settings) -> dict[str, Any] | None:
     scored = rank.rank(
         profile,
         candidates,
-        settings=settings.bailian,
+        bailian=bailian,
         avoid_penalty=settings.avoid_penalty,
+        concurrency=settings.bailian.decision_concurrency,
     )
     kept = rank.select_top(scored, min_score=settings.min_score, max_papers=settings.max_papers)
     log.info(
@@ -83,11 +85,13 @@ def _build(settings: Settings) -> dict[str, Any] | None:
         log.info("nothing cleared the threshold today; not sending")
         return None
 
+    sources = full_text.attach(kept, settings=settings.full_text)
     described = describe.describe_all(
         profile,
-        full_text.attach(kept, settings=settings.full_text),
-        settings=settings.bailian,
+        sources,
+        bailian=bailian,
         fallback_language=settings.language,
+        concurrency=settings.bailian.chat_concurrency,
     )
     if not described:
         log.warning("no description succeeded; not sending an empty card")
@@ -118,15 +122,17 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     try:
         settings.require_runtime()
-        if args.dry_run:
-            message = _build(settings)
-            if message is not None:
-                print(json.dumps(message, ensure_ascii=False, indent=2))
-            return 0
+        # Validate the webhook before the slow stages: a delivery run must not
+        # rank 300 papers only to discover it cannot send.
+        webhook = None if args.dry_run else settings.require_webhook()
 
-        webhook = settings.require_webhook()
-        message = _build(settings)
-        if message is not None:
+        with Bailian(settings.bailian) as bailian:
+            message = _build(settings, bailian)
+        if message is None:
+            return 0
+        if webhook is None:
+            print(json.dumps(message, ensure_ascii=False, indent=2))
+        else:
             feishu.send(webhook, message)
         return 0
     except ConfigError as exc:

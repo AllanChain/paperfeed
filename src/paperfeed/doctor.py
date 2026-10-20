@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from . import bailian
+from .bailian import Bailian
 from .config import Settings
 from .zotero import load_profile
 
@@ -27,19 +27,18 @@ def _attempt(name: str, probe: Callable[[], str]) -> CheckResult:
 
 def _decision_check(settings: Settings) -> CheckResult:
     def probe() -> str:
-        response = bailian.decide(
-            settings.bailian,
-            {
-                "model": settings.bailian.decision_model,
-                "state": {"text": "paperfeed connectivity check"},
-                "questions": {
-                    "reachable": {
-                        "type": "noul",
-                        "instructions": "Is this a connectivity check?",
-                    }
-                },
-            },
-        )
+        with Bailian(settings.bailian) as client:
+            response = client.decide(
+                {
+                    "state": {"text": "paperfeed connectivity check"},
+                    "questions": {
+                        "reachable": {
+                            "type": "noul",
+                            "instructions": "Is this a connectivity check?",
+                        }
+                    },
+                }
+            )
         answer = response.get("answers", {}).get("reachable", {})
         return f"noul={answer.get('noul')!r}"
 
@@ -48,12 +47,12 @@ def _decision_check(settings: Settings) -> CheckResult:
 
 def _chat_check(settings: Settings) -> CheckResult:
     def probe() -> str:
-        text = bailian.chat(
-            settings.bailian,
-            system="Reply with the single word: ok",
-            user="ping",
-            max_tokens=8,
-        )
+        with Bailian(settings.bailian) as client:
+            text = client.chat(
+                system="Reply with the single word: ok",
+                user="ping",
+                max_tokens=8,
+            )
         return f"reply={text!r}"
 
     return _attempt(f"chat ({settings.bailian.chat_model})", probe)

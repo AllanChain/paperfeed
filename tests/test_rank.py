@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import httpx
+from types import SimpleNamespace
+
 import pytest
 
-from conftest import fixture_json, make_paper, make_settings
-from paperfeed import rank as rank_module
+from conftest import fixture_json, make_paper
 from paperfeed.profile_note import Profile
 from paperfeed.rank import (
     AVOID_CRITERIA,
@@ -20,15 +20,15 @@ from paperfeed.rank import (
 )
 
 
-@pytest.fixture
-def bailian():
-    return make_settings().bailian
+def _bailian(decide):
+    """The one method rank.py needs from a Bailian."""
+    return SimpleNamespace(decide=decide)
 
 
 def test_payload_shape(profile: Profile) -> None:
-    payload = build_payload(profile, make_paper(), "decision-model-preview")
+    payload = build_payload(profile, make_paper())
 
-    assert payload["model"] == "decision-model-preview"
+    assert "model" not in payload  # the client injects its own model
     assert payload["state"]["title"].startswith("Entanglement scaling")
     assert payload["state"]["categories"] == ["quant-ph"]
 
@@ -63,46 +63,44 @@ def test_final_score_applies_penalty_and_clips() -> None:
     assert final_score(1.0, 0.0, 0.5) == 1.0
 
 
-def test_score_paper_reads_recorded_response(profile: Profile, bailian) -> None:
+def test_score_paper_reads_recorded_response(profile: Profile) -> None:
     response = fixture_json("systemone_response.json")
     scored = score_paper(
         profile,
         make_paper(),
-        settings=bailian,
+        bailian=_bailian(lambda _payload: response),
         avoid_penalty=0.5,
-        decide_fn=lambda _settings, _payload, _client: response,
     )
     assert scored.relevance == pytest.approx(0.75)
     assert scored.avoid == pytest.approx(0.04)
     assert scored.final == pytest.approx(0.73)
 
 
-def test_failed_call_scores_zero(profile: Profile, bailian) -> None:
-    def boom(_settings, _payload, _client):
+def test_failed_call_scores_zero(profile: Profile) -> None:
+    def boom(_payload):
         raise TimeoutError("upstream is down")
 
-    scored = score_paper(profile, make_paper(), settings=bailian, avoid_penalty=0.5, decide_fn=boom)
+    scored = score_paper(profile, make_paper(), bailian=_bailian(boom), avoid_penalty=0.5)
     assert scored.final == 0.0
     assert scored.relevance == 0.0
 
 
-def test_malformed_answer_scores_zero(profile: Profile, bailian) -> None:
+def test_malformed_answer_scores_zero(profile: Profile) -> None:
     broken = {"answers": {"relevance": {"score": 2.0}}}
     scored = score_paper(
         profile,
         make_paper(),
-        settings=bailian,
+        bailian=_bailian(lambda _payload: broken),
         avoid_penalty=0.5,
-        decide_fn=lambda _settings, _payload, _client: broken,
     )
     assert scored.final == 0.0
 
 
-def test_rank_orders_by_final_score(profile: Profile, bailian) -> None:
+def test_rank_orders_by_final_score(profile: Profile) -> None:
     papers = [make_paper(arxiv_id=f"2410.0000{i}", title=f"paper {i}") for i in range(4)]
     finals = {"paper 0": 0.2, "paper 1": 0.9, "paper 2": 0.5, "paper 3": 0.9}
 
-    def decide(_settings, payload, _client):
+    def decide(payload):
         final = finals[payload["state"]["title"]]
         return {
             "answers": {"relevance": {"score": final * (LEVEL_COUNT - 1)}, "avoid": {"noul": 0.0}}
@@ -111,45 +109,31 @@ def test_rank_orders_by_final_score(profile: Profile, bailian) -> None:
     scored = rank(
         profile,
         papers,
-        settings=bailian,
+        bailian=_bailian(decide),
         avoid_penalty=0.5,
-        decide_fn=decide,
+        concurrency=2,
     )
     assert [item.final for item in scored] == pytest.approx([0.9, 0.9, 0.5, 0.2])
     assert [item.paper.arxiv_id for item in scored[:2]] == ["2410.00001", "2410.00003"]
 
 
-def test_rank_reuses_one_http_client(profile: Profile, bailian, monkeypatch) -> None:
-    clients: list[httpx.Client] = []
-    real_client = httpx.Client
-
-    class CountingClient(real_client):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            clients.append(self)
-
-    monkeypatch.setattr(rank_module.httpx, "Client", CountingClient)
-
-    papers = [make_paper(arxiv_id=f"2410.0000{i}", title=f"paper {i}") for i in range(2)]
-
-    def decide(_settings, _payload, _client):
-        return {"answers": {"relevance": {"score": 2.0}, "avoid": {"noul": 0.0}}}
-
-    rank(profile, papers, settings=bailian, avoid_penalty=0.5, decide_fn=decide)
-    assert len(clients) == 1
-
-
-def test_select_top_filters_then_caps(profile: Profile, bailian) -> None:
+def test_select_top_filters_then_caps(profile: Profile) -> None:
     papers = [make_paper(arxiv_id=f"2410.0000{i}", title=f"paper {i}") for i in range(4)]
     finals = {"paper 0": 0.9, "paper 1": 0.5, "paper 2": 0.4, "paper 3": 0.1}
 
-    def decide(_settings, payload, _client):
+    def decide(payload):
         final = finals[payload["state"]["title"]]
         return {
             "answers": {"relevance": {"score": final * (LEVEL_COUNT - 1)}, "avoid": {"noul": 0.0}}
         }
 
-    scored = rank(profile, papers, settings=bailian, avoid_penalty=0.5, decide_fn=decide)
+    scored = rank(
+        profile,
+        papers,
+        bailian=_bailian(decide),
+        avoid_penalty=0.5,
+        concurrency=2,
+    )
     kept = select_top(scored, min_score=0.35, max_papers=10)
     assert [item.paper.title for item in kept] == ["paper 0", "paper 1", "paper 2"]
     assert len(select_top(scored, min_score=0.35, max_papers=1)) == 1
@@ -157,9 +141,7 @@ def test_select_top_filters_then_caps(profile: Profile, bailian) -> None:
 
 
 def test_instructions_forbid_category_as_evidence(profile: Profile) -> None:
-    instructions = build_payload(profile, make_paper(), "decision-model-preview")["questions"][
-        "relevance"
-    ]["instructions"]
+    instructions = build_payload(profile, make_paper())["questions"]["relevance"]["instructions"]
     assert "Judge only what the abstract states" in instructions
     assert "not by itself evidence of relevance" in instructions
     assert "names the system" not in instructions

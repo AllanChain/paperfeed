@@ -70,46 +70,43 @@ def test_extraction_collapses_whitespace() -> None:
     assert "  " not in text
 
 
-def test_fetch_returns_the_body(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_returns_the_body() -> None:
     calls: list[str] = []
 
     def fake_get(url, **_kwargs):
         calls.append(url)
         return response(200, page())
 
-    monkeypatch.setattr(full_text.httpx, "get", fake_get)
-
-    text = full_text.fetch_text(make_paper(arxiv_id="2410.01234"), settings=settings())
+    text = full_text.fetch_text(
+        make_paper(arxiv_id="2410.01234"), settings=settings(), client=FakeClient(fake_get)
+    )
 
     assert text is not None
     assert "Entanglement encodes the correlations" in text
     assert calls == ["https://arxiv.org/html/2410.01234"]
 
 
-def test_missing_html_is_not_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(full_text.httpx, "get", lambda *_a, **_k: response(404))
-    assert full_text.fetch_text(make_paper(), settings=settings()) is None
+def test_missing_html_is_not_a_failure() -> None:
+    client = FakeClient(lambda *_a, **_k: response(404))
+    assert full_text.fetch_text(make_paper(), settings=settings(), client=client) is None
 
 
-def test_transport_error_is_not_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_transport_error_is_not_a_failure() -> None:
     def boom(*_args, **_kwargs):
         raise httpx.ConnectTimeout("too slow")
 
-    monkeypatch.setattr(full_text.httpx, "get", boom)
-    assert full_text.fetch_text(make_paper(), settings=settings()) is None
+    assert full_text.fetch_text(make_paper(), settings=settings(), client=FakeClient(boom)) is None
 
 
-def test_stub_page_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        full_text.httpx, "get", lambda *_a, **_k: response(200, "<article><p>Too short.</p>")
-    )
-    assert full_text.fetch_text(make_paper(), settings=settings()) is None
+def test_stub_page_is_rejected() -> None:
+    client = FakeClient(lambda *_a, **_k: response(200, "<article><p>Too short.</p>"))
+    assert full_text.fetch_text(make_paper(), settings=settings(), client=client) is None
 
 
-def test_long_body_is_truncated(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(full_text.httpx, "get", lambda *_a, **_k: response(200, page()))
+def test_long_body_is_truncated() -> None:
+    client = FakeClient(lambda *_a, **_k: response(200, page()))
 
-    text = full_text.fetch_text(make_paper(), settings=settings(max_chars=200))
+    text = full_text.fetch_text(make_paper(), settings=settings(max_chars=200), client=client)
 
     assert text is not None
     assert len(text) == 200
@@ -137,7 +134,7 @@ def test_attach_preserves_order_and_keeps_gaps(monkeypatch: pytest.MonkeyPatch) 
         "2410.00003",
     ]
     assert [item.full_text is not None for item in sourced] == [True, False, True]
-    assert sourced[0].score == papers[0].final
+    assert sourced[0].scored.final == papers[0].final
 
 
 def test_attach_disabled_fetches_nothing(monkeypatch: pytest.MonkeyPatch) -> None:

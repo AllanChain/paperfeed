@@ -15,15 +15,11 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from openai import OpenAI
-
-from . import bailian
 from .arxiv_source import Paper
+from .bailian import Bailian, BailianError
 from .concurrency import map_bounded
-from .config import BailianSettings
 from .full_text import Sourced
 from .profile_note import Profile
-from .rank import ScoredPaper
 from .text import collapse_whitespace
 
 log = logging.getLogger(__name__)
@@ -34,16 +30,9 @@ MAX_TOKENS = 300
 
 @dataclass(frozen=True)
 class Described:
-    scored: ScoredPaper
+    paper: Paper
+    score: float
     description: str
-
-    @property
-    def paper(self) -> Paper:
-        return self.scored.paper
-
-    @property
-    def score(self) -> float:
-        return self.scored.final
 
 
 def build_system_prompt(
@@ -107,52 +96,45 @@ def clean(text: str) -> str:
     return text
 
 
-def describe(
-    sourced: Sourced,
-    *,
-    settings: BailianSettings,
-    system: str,
-    client: OpenAI | None = None,
-) -> Described:
+def describe(sourced: Sourced, *, bailian: Bailian, system: str) -> Described:
     """One description call. Raises on failure; the caller decides whether to drop."""
     text = bailian.chat(
-        settings,
         system=system,
         user=build_user_prompt(sourced.paper, sourced.full_text),
         max_tokens=MAX_TOKENS,
-        client=client,
     )
     description = clean(text)
     if not description:
-        raise bailian.BailianError("description was empty after cleaning")
-    return Described(scored=sourced.scored, description=description)
+        raise BailianError("description was empty after cleaning")
+    return Described(
+        paper=sourced.paper,
+        score=sourced.scored.final,
+        description=description,
+    )
 
 
 def describe_all(
     profile: Profile,
     sources: Sequence[Sourced],
     *,
-    settings: BailianSettings,
+    bailian: Bailian,
     fallback_language: str,
+    concurrency: int,
 ) -> list[Described]:
     """Describe every kept paper concurrently, dropping (and logging) failures."""
     if not sources:
         return []
 
     # Two prompts, not one per paper: the full-text variant only adds one clause.
-    systems = {
-        False: build_system_prompt(profile, fallback_language),
-        True: build_system_prompt(profile, fallback_language, full_text=True),
-    }
-    client = bailian.openai_client(settings)
+    abstract_prompt = build_system_prompt(profile, fallback_language)
+    full_text_prompt = build_system_prompt(profile, fallback_language, full_text=True)
 
     def one(item: Sourced) -> Described | None:
         try:
             return describe(
                 item,
-                settings=settings,
-                system=systems[item.full_text is not None],
-                client=client,
+                bailian=bailian,
+                system=full_text_prompt if item.full_text is not None else abstract_prompt,
             )
         except Exception as exc:  # noqa: BLE001 - one bad description drops one paper
             log.error(
@@ -163,9 +145,5 @@ def describe_all(
             )
             return None
 
-    try:
-        results = map_bounded(one, sources, limit=settings.chat_concurrency)
-    finally:
-        client.close()
-
+    results = map_bounded(one, sources, limit=concurrency)
     return [item for item in results if item is not None]

@@ -16,7 +16,7 @@ from typing import Any
 import feedparser
 import httpx
 
-from . import USER_AGENT
+from . import USER_AGENT, net
 from .config import ArxivSettings
 from .errors import PaperfeedError
 from .text import collapse_whitespace
@@ -94,7 +94,7 @@ def parse_feed(content: bytes, *, category: str, announce_types: list[str]) -> l
         return []
 
     allowed = {value.lower() for value in announce_types}
-    papers: dict[str, Paper] = {}
+    papers: list[Paper] = []
 
     for entry in feed.get("entries", []):
         summary = str(entry.get("summary") or "")
@@ -119,8 +119,7 @@ def parse_feed(content: bytes, *, category: str, announce_types: list[str]) -> l
         tags = tuple(str(tag.get("term", "")) for tag in entry.get("tags", []) if tag.get("term"))
         categories = tags or (category,)
 
-        papers.setdefault(
-            arxiv_id,
+        papers.append(
             Paper(
                 arxiv_id=arxiv_id,
                 title=title,
@@ -129,21 +128,22 @@ def parse_feed(content: bytes, *, category: str, announce_types: list[str]) -> l
                 url=ARXIV_URL.format(arxiv_id=arxiv_id),
                 categories=categories,
                 announce_type=announce_type or "unknown",
-            ),
+            )
         )
 
     log.info("%s: %d candidate(s)", category, len(papers))
-    return list(papers.values())
+    return papers
 
 
 def fetch(settings: ArxivSettings, *, client: httpx.Client | None = None) -> list[Paper]:
     """Fetch every configured category, dedupe by arXiv id, cap the candidate count."""
-    own_client = client or httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=RSS_TIMEOUT)
     seen: dict[str, Paper] = {}
-    try:
+    with net.open_client(
+        headers={"User-Agent": USER_AGENT}, timeout=RSS_TIMEOUT, reuse=client
+    ) as http:
         for category in settings.categories:
             try:
-                response = own_client.get(RSS_URL.format(category=category))
+                response = http.get(RSS_URL.format(category=category))
                 response.raise_for_status()
             except httpx.HTTPError as exc:
                 raise ArxivError(f"fetching {category}: {exc}") from exc
@@ -151,9 +151,6 @@ def fetch(settings: ArxivSettings, *, client: httpx.Client | None = None) -> lis
                 response.content, category=category, announce_types=settings.announce_types
             ):
                 seen.setdefault(paper.arxiv_id, paper)
-    finally:
-        if client is None:
-            own_client.close()
 
     papers = list(seen.values())
     dropped = max(0, len(papers) - settings.max_candidates)

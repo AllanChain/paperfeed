@@ -3,20 +3,21 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from conftest import make_paper, make_scored
+from conftest import make_paper
 from paperfeed import feishu
 from paperfeed.describe import Described
 
 
 def described(**overrides) -> Described:
-    scored = make_scored(
-        overrides.pop("final", 0.81),
-        paper=make_paper(
-            title=overrides.pop("title", "Entanglement scaling in a two-dimensional gas"),
-            authors=overrides.pop("authors", ("Ana Author", "Bo Author")),
-        ),
+    paper = make_paper(
+        title=overrides.pop("title", "Entanglement scaling in a two-dimensional gas"),
+        authors=overrides.pop("authors", ("Ana Author", "Bo Author")),
     )
-    return Described(scored=scored, description=overrides.pop("description", "A crisp summary."))
+    return Described(
+        paper=paper,
+        score=overrides.pop("final", 0.81),
+        description=overrides.pop("description", "A crisp summary."),
+    )
 
 
 def test_card_layout() -> None:

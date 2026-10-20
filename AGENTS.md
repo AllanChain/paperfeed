@@ -28,10 +28,11 @@ uv run paperfeed --dry-run
 | Per-paper full-text HTML fetch and body extraction | `src/paperfeed/full_text.py` |
 | Ranking payload, levels, score math, selection | `src/paperfeed/rank.py` |
 | Description prompt and failure handling | `src/paperfeed/describe.py` |
+| Bailian decision/chat client (one key, two transports) | `src/paperfeed/bailian.py` |
 | Feishu card layout and delivery | `src/paperfeed/feishu.py` |
 | LaTeX → Unicode for card text | `src/paperfeed/mathfmt.py` |
 | `--check` diagnostics | `src/paperfeed/doctor.py` |
-| Shared HTTP mechanics (Bailian retries; webhook sends once) | `src/paperfeed/net.py` |
+| Shared client helper, Bailian retries; webhook sends once | `src/paperfeed/net.py` |
 | Bounded thread-pool map for per-item calls | `src/paperfeed/concurrency.py` |
 | CLI and run order | `src/paperfeed/main.py` |
 
@@ -46,14 +47,10 @@ User-facing setup, tuning, and troubleshooting: `README.md`.
   A missing body (no arXiv HTML, timeout, stub page) falls back to the abstract; it is
   never a run failure and never a reason to drop a paper.
 - The Feishu card is sent exactly once. Never retry the webhook: a retried POST can duplicate the card.
-- No cross-run state, embeddings, or keyword prefilter. A paper body is fetched, used
-  for one chat call, and dropped — there is no local copy to reuse.
-- Fetching the e-print LaTeX source instead of arXiv's HTML was measured and rejected:
-  1.2-4.3x more characters, and stripping it needs tar/zip detection plus regexes that
+- No cross-run state, embeddings, or keyword prefilter. There is no local copy of a
+  paper body: full text is fetched, used for one chat call, and dropped. Fetching the
+  e-print LaTeX source instead was measured and rejected — 1.2-4.3x more characters
+  than the HTML body, and stripping it needs tar/zip detection plus regexes that
   silently delete prose.
-- There is no local copy of a paper body: full text is fetched, used for one chat call,
-  and dropped. Fetching it from the e-print LaTeX source instead was measured and
-  rejected — 1.2-4.3x more characters than the HTML body, and stripping it needs
-  tar/zip detection plus regexes that silently delete prose.
 - Credentials come from env/.env only; `.env` is gitignored.
 - Tests must stay offline; use fixtures or injected clients.
