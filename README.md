@@ -32,6 +32,13 @@ GitHub Actions cron. No server, no database, no state.
    `La₆Ni₅O₁₂`, `$\nu=2/3$` → `ν=2/3`); anything exotic degrades to readable text
    instead of showing raw TeX.
 
+   The card ends with a grey foot note giving the run's token spend per stage, e.g.
+   `rank 183k in · describe 55k in / 9k out`. Ranking is input-only (the decision
+   model has no output budget); describing reports both sides. Counts come from the
+   API responses, so retried attempts are not included — read them as a size signal,
+   not a bill. The same numbers are logged on every run, including days when no card
+   is sent.
+
 ## Setup
 
 ### 1. Zotero
@@ -179,6 +186,7 @@ knob; the criteria wording is the lever, so tighten the levels before raising
 | `--check` chat fails with 400 | your model id rejects `chat_extra_body`; set `PAPERFEED_BAILIAN__CHAT_EXTRA_BODY={}` |
 | A run keeps nothing | `min_score` too high for the profile, or the note's `Topics` are too narrow |
 | A description reads like the abstract | that paper has no arXiv HTML (`arxiv.org/html/<id>` 404s). arXiv renders HTML only for LaTeX submissions it converted successfully — roughly one paper in six — and the description falls back to the abstract |
+| The card's token count is below the DashScope bill | the foot note counts only responses the run received; an attempt retried by the HTTP client or a request that failed outright consumed tokens without reporting usage |
 
 ## Development
 

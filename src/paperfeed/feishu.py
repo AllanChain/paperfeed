@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from . import USER_AGENT, net
+from .bailian import Usage
 from .describe import Described
 from .errors import PaperfeedError
 from .mathfmt import to_display
@@ -47,6 +48,26 @@ def _description_text(description: str) -> str:
     return collapse_whitespace(to_display(description)).replace("**", "*")
 
 
+def _compact_tokens(count: int) -> str:
+    """183_400 -> '183.4k', 9_000 -> '9k', 612 -> '612'. Keeps the footer short."""
+    if count >= 1_000_000:
+        scaled, suffix = count / 1_000_000, "M"
+    elif count >= 1_000:
+        scaled, suffix = count / 1_000, "k"
+    else:
+        return str(count)
+    return f"{scaled:.1f}".removesuffix(".0") + suffix
+
+
+def _usage_text(usage: Usage) -> str:
+    """The run's spend, split by stage: ranking is input-only, describing is not."""
+    return (
+        f"rank {_compact_tokens(usage.rank.input_tokens)} in · "
+        f"describe {_compact_tokens(usage.describe.input_tokens)} in / "
+        f"{_compact_tokens(usage.describe.output_tokens)} out"
+    )
+
+
 def build_card(
     *,
     date: str,
@@ -54,6 +75,7 @@ def build_card(
     kept: Sequence[Described],
     categories: Sequence[str],
     color: str = "blue",
+    usage: Usage | None = None,
 ) -> dict[str, Any]:
     """Build the card body (without the `msg_type` wrapper)."""
     intro = (
@@ -71,6 +93,13 @@ def build_card(
         )
         elements.append({"tag": "hr"})
         elements.append({"tag": "div", "text": {"tag": "lark_md", "content": content}})
+
+    # Always rendered by a real run; omitted only when a caller passes no usage
+    # (tests, --check) or every count is zero, where it would read as "0 tokens".
+    if usage is not None and usage.total:
+        elements.append(
+            {"tag": "note", "elements": [{"tag": "plain_text", "content": _usage_text(usage)}]}
+        )
 
     return {
         "config": {"wide_screen_mode": True},

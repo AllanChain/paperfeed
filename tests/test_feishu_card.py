@@ -5,6 +5,7 @@ import pytest
 
 from conftest import make_paper
 from paperfeed import feishu
+from paperfeed.bailian import Usage
 from paperfeed.describe import Described
 
 
@@ -82,6 +83,47 @@ def test_brackets_in_titles_cannot_break_the_link() -> None:
     )
     content = card["elements"][2]["text"]["content"]
     assert "[A (very) odd title](https://arxiv.org/abs/2410.01234)" in content
+
+
+def test_token_usage_is_a_trailing_foot_note() -> None:
+    usage = Usage()
+    usage.rank.input_tokens = 183_400
+    usage.describe.input_tokens = 55_100
+    usage.describe.output_tokens = 9_000
+
+    card = feishu.build_card(
+        date="2026-10-17",
+        collected=300,
+        kept=[described()],
+        categories=["quant-ph"],
+        usage=usage,
+    )
+
+    assert card["elements"][-1] == {
+        "tag": "note",
+        "elements": [
+            {"tag": "plain_text", "content": "rank 183.4k in · describe 55.1k in / 9k out"}
+        ],
+    }
+
+
+def test_zero_usage_adds_no_foot_note() -> None:
+    card = feishu.build_card(
+        date="2026-10-17",
+        collected=1,
+        kept=[described()],
+        categories=["quant-ph"],
+        usage=Usage(),
+    )
+
+    assert not [element for element in card["elements"] if element["tag"] == "note"]
+
+
+def test_token_counts_stay_compact() -> None:
+    assert feishu._compact_tokens(612) == "612"
+    assert feishu._compact_tokens(9_000) == "9k"
+    assert feishu._compact_tokens(9_123) == "9.1k"
+    assert feishu._compact_tokens(1_200_000) == "1.2M"
 
 
 def test_message_wrapper() -> None:

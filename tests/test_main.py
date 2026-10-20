@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
 from conftest import fixture_text, make_paper, make_scored, make_settings
 from paperfeed import main
+from paperfeed.bailian import Usage
 from paperfeed.config import Settings
 from paperfeed.describe import Described
 from paperfeed.doctor import CheckResult
@@ -131,6 +133,36 @@ def test_missing_webhook_fails_before_any_work(wired, monkeypatch, caplog) -> No
     assert "PAPERFEED_FEISHU__WEBHOOK_URL" in caplog.text
     assert fetched == []
     assert wired["sent"] == []
+
+
+def test_card_reports_token_usage_and_logs_it(wired, monkeypatch, capsys, caplog) -> None:
+    class Spent(Usage):
+        def __init__(self) -> None:
+            super().__init__()
+            self.rank.input_tokens = 183_000
+            self.describe.input_tokens = 55_000
+            self.describe.output_tokens = 9_100
+
+    class FakeBailian:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.usage = Spent()
+
+        def __enter__(self) -> FakeBailian:
+            return self
+
+        def __exit__(self, *_exc_info: object) -> None:
+            return None
+
+    monkeypatch.setattr(main, "Bailian", FakeBailian)
+    caplog.set_level(logging.INFO)
+
+    assert main.run(["--dry-run"]) == 0
+
+    card = json.loads(capsys.readouterr().out)["card"]
+    assert card["elements"][-1]["elements"][0]["content"] == (
+        "rank 183k in · describe 55k in / 9.1k out"
+    )
+    assert "tokens: rank 183000 in · describe 55000 in / 9100 out" in caplog.text
 
 
 def test_reportable_failure_returns_one(wired, monkeypatch, caplog) -> None:

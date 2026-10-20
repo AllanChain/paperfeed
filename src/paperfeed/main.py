@@ -103,6 +103,7 @@ def _build(settings: Settings, bailian: Bailian) -> dict[str, Any] | None:
         kept=described,
         categories=settings.arxiv.categories,
         color=settings.feishu.card_color,
+        usage=bailian.usage,
     )
     return feishu.build_message(card)
 
@@ -127,7 +128,17 @@ def run(argv: Sequence[str] | None = None) -> int:
         webhook = None if args.dry_run else settings.require_webhook()
 
         with Bailian(settings.bailian) as bailian:
-            message = _build(settings, bailian)
+            try:
+                message = _build(settings, bailian)
+            finally:
+                # The only record of spend on days when no card is sent: ranking
+                # ran, but nothing cleared the threshold or no description survived.
+                log.info(
+                    "tokens: rank %d in · describe %d in / %d out",
+                    bailian.usage.rank.input_tokens,
+                    bailian.usage.describe.input_tokens,
+                    bailian.usage.describe.output_tokens,
+                )
         if message is None:
             return 0
         if webhook is None:

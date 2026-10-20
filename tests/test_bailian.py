@@ -7,7 +7,7 @@ import httpx
 import pytest
 import tenacity.nap
 
-from conftest import make_settings
+from conftest import fixture_json, make_settings
 from paperfeed import bailian
 from paperfeed.bailian import Bailian, BailianError
 
@@ -72,6 +72,24 @@ def test_decide_rejects_a_non_object_body() -> None:
         client.decide({})
 
 
+def test_decide_records_input_tokens() -> None:
+    client, _ = _bailian([httpx.Response(200, json=fixture_json("systemone_response.json"))])
+
+    client.decide({})
+
+    assert client.usage.rank.input_tokens == 612
+    assert client.usage.rank.output_tokens == 0  # the decision model has no output budget
+    assert client.usage.describe.total == 0
+
+
+def test_a_response_without_usage_counts_as_zero() -> None:
+    client, _ = _bailian([httpx.Response(200, json={"answers": {}})])
+
+    client.decide({})
+
+    assert client.usage.total == 0
+
+
 def test_missing_key_is_reported() -> None:
     settings = make_settings(bailian={"api_key": None}).bailian
     with pytest.raises(BailianError, match="API_KEY"):
@@ -79,20 +97,22 @@ def test_missing_key_is_reported() -> None:
 
 
 class FakeCompletions:
-    def __init__(self, content: str) -> None:
+    def __init__(self, content: str, usage: object | None = None) -> None:
         self.content = content
+        self.usage = usage
         self.calls: list[dict] = []
 
     def create(self, **kwargs):
         self.calls.append(kwargs)
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=self.content))]
+            choices=[SimpleNamespace(message=SimpleNamespace(content=self.content))],
+            usage=self.usage,
         )
 
 
 class FakeOpenAI:
-    def __init__(self, content: str = " ok ") -> None:
-        self.completions = FakeCompletions(content)
+    def __init__(self, content: str = " ok ", usage: object | None = None) -> None:
+        self.completions = FakeCompletions(content, usage)
         self.chat = SimpleNamespace(completions=self.completions)
 
     def close(self) -> None:
@@ -117,3 +137,26 @@ def test_chat_rejects_an_empty_completion(monkeypatch: pytest.MonkeyPatch) -> No
 
     with Bailian(make_settings().bailian) as client, pytest.raises(BailianError, match="empty"):
         client.chat(system="s", user="u", max_tokens=8)
+
+
+def test_chat_records_prompt_and_completion_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    usage = SimpleNamespace(prompt_tokens=12_345, completion_tokens=210)
+    monkeypatch.setattr(bailian, "OpenAI", lambda **_kwargs: FakeOpenAI("ok", usage))
+
+    with Bailian(make_settings().bailian) as client:
+        client.chat(system="s", user="u", max_tokens=8)
+        client.chat(system="s", user="u", max_tokens=8)
+
+    assert client.usage.describe.input_tokens == 24_690
+    assert client.usage.describe.output_tokens == 420
+    assert client.usage.rank.total == 0
+
+
+def test_a_blank_completion_still_counts_its_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    usage = SimpleNamespace(prompt_tokens=900, completion_tokens=0)
+    monkeypatch.setattr(bailian, "OpenAI", lambda **_kwargs: FakeOpenAI("  ", usage))
+
+    with Bailian(make_settings().bailian) as client, pytest.raises(BailianError, match="empty"):
+        client.chat(system="s", user="u", max_tokens=8)
+
+    assert client.usage.describe.input_tokens == 900
