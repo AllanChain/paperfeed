@@ -3,8 +3,9 @@ name: daily
 on:
   # arXiv's announcement email goes out Sun–Thu 20:00 ET, but the RSS and HTML
   # listings are regenerated at midnight ET.
+  # Pre-compensate GitHub Actions queue delay
   schedule:
-    - cron: "59 23 * * 0-4"
+    - cron: "29 20 * * 0-4"
       timezone: "America/New_York"
   workflow_dispatch:
 
