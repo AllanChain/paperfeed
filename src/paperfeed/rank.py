@@ -64,6 +64,11 @@ class ScoredPaper:
     final: float
 
 
+def sort_key(item: ScoredPaper) -> tuple[float, float, str]:
+    """Best final score first, then relevance, then arXiv id for a stable order."""
+    return (-item.final, -item.relevance, item.paper.arxiv_id)
+
+
 def clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
@@ -173,7 +178,7 @@ def rank(
         return score_paper(profile, paper, bailian=bailian, avoid_penalty=avoid_penalty)
 
     scored = map_bounded(score, papers, limit=concurrency)
-    scored.sort(key=lambda item: (-item.final, -item.relevance, item.paper.arxiv_id))
+    scored.sort(key=sort_key)
     return scored
 
 

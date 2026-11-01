@@ -16,8 +16,10 @@ GitHub Actions cron. No server, no database, no state.
    items are the positives (and prompt anchors); the standalone note whose title is
    `PAPERFEED_ZOTERO__NOTE_TITLE` is the profile: `Focus`, `Topics`, `Methods`,
    `Avoid`, `Style`, `Language`.
-2. **arXiv** — one RSS fetch per category, keeping `new` and `cross` announcements
-   and dropping replacements. Cross-listed papers are deduped by arXiv id.
+2. **arXiv** — one HTML listing fetch per category (`/list/<category>/new`), keeping
+   the new and cross sections and dropping replacements. Cross-listed papers are
+   deduped by arXiv id. Requests are 15 s apart (arXiv's `robots.txt`), and
+   ranking runs during that wait.
 3. **Rank** — one `decision-model-preview` (System One) call per paper, two
    questions: relevance as a 4-level `score` (expected level index ÷ 3) and
    `avoid` as a `noul` probability. `final = max(0, relevance − 0.5 · P(avoid))`.
@@ -150,11 +152,11 @@ Push the repo, then add:
 | Variable | `PAPERFEED_ARXIV__CATEGORIES` | JSON list, e.g. `["cond-mat.str-el","quant-ph"]` |
 
 `ci.yml` runs lint, formatting, type checks, and tests on every push and pull
-request. `daily.yml` runs the real feed at 00:15 ET Monday–Friday — arXiv
-regenerates its RSS/listings at midnight ET, and the `timezone` key follows
-daylight saving — and on manual `workflow_dispatch`; it never runs on pushes, so
-a push cannot send a card. Run the daily workflow once by hand and confirm the
-card renders before trusting the cron.
+request. `daily.yml` runs the real feed Sun–Thu at 20:29 ET, 29 minutes after
+arXiv's 20:00 ET announcement, and on manual `workflow_dispatch`; it never runs
+on pushes, so a push cannot send a card. Run
+the daily workflow once by hand and confirm the card renders before trusting the
+cron.
 
 ## Tuning
 
@@ -163,7 +165,7 @@ card renders before trusting the cron.
 | `PAPERFEED_MAX_PAPERS` | how many papers reach the card (default 10) |
 | `PAPERFEED_MIN_SCORE` | relevance threshold after the avoid penalty (default 0.60 ≈ level 1.8 of 3) |
 | `PAPERFEED_AVOID_PENALTY` | weight of `P(avoid)` (default 0.5) |
-| `PAPERFEED_ARXIV__MAX_CANDIDATES` | candidate cap before scoring (default 300) |
+| `PAPERFEED_ARXIV__MAX_CANDIDATES` | per-category candidate cap before scoring (default 300) |
 | `PAPERFEED_FULL_TEXT__ENABLED` | fetch the body of every kept paper for its description (default `true`) |
 | `PAPERFEED_FULL_TEXT__MAX_CHARS` | pathological-paper guard (default 350000 ≈ 100k tokens); real bodies are 12k–55k tokens |
 | note `Topics` / `Methods` / `Avoid` | the ranking rubric itself |
@@ -197,9 +199,9 @@ uv run mypy
 uv run pytest -q
 ```
 
-Tests never touch the network: RSS, the profile note, an arXiv HTML page and a
-recorded System One response live in `tests/fixtures/`. `PAPERFEED_DEBUG=true`
-trims ranking to 10 candidates and turns on verbose logging.
+Tests never touch the network: HTML listing pages, the profile note, an arXiv HTML
+page and a recorded System One response live in `tests/fixtures/`.
+`PAPERFEED_DEBUG=true` trims ranking to 10 candidates and turns on verbose logging.
 
 ## License
 

@@ -29,7 +29,7 @@ class ZoteroSettings(BaseModel):
 
 class ArxivSettings(BaseModel):
     categories: list[str] = Field(default_factory=lambda: ["cond-mat.str-el", "quant-ph"])
-    announce_types: list[str] = Field(default_factory=lambda: ["new", "cross"])
+    # Per category, after dropping replacements and before cross-category dedupe.
     max_candidates: int = 300
 
 

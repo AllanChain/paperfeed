@@ -1,20 +1,29 @@
-"""arXiv candidates from the per-category RSS feeds.
+"""arXiv candidates from the per-category HTML listing pages.
 
-Each item carries `arxiv:announce_type`; feedparser exposes it as
-`entry.arxiv_announce_type`. Values seen in the wild: `new`, `cross`, `replace`,
-`replace-cross`. A cross-listed paper appears in several category feeds, so the
-dedupe key is the arXiv id with the version suffix stripped.
+`/list/<category>/new` carries three sections — new submissions, cross
+submissions and replacements — each in its own `<dl id="articles">` with the
+section name in its `<h3>`. An entry is a `<dt>`/`<dd>` pair whose abstract is
+already in the page (`<p class="mathjax">`), so no RSS feed or per-paper `/abs`
+fetch is involved. Only new and cross sections are kept.
+
+A cross-listed paper appears on several category pages, so the dedupe key is the
+arXiv id with the version suffix stripped.
+
+arxiv.org/robots.txt asks for a 15 s crawl delay on `/list`. The delay is
+measured from the previous response, and ranking runs between pages, so most of
+the wait is already spent by the time the next page is due.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import time
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any
 
-import feedparser
 import httpx
+from bs4 import BeautifulSoup, Tag
 
 from . import USER_AGENT, net
 from .config import ArxivSettings
@@ -23,18 +32,22 @@ from .text import collapse_whitespace
 
 log = logging.getLogger(__name__)
 
-# rss.arxiv.org, not export.arxiv.org: the export host fronts the same document
-# with a long-lived Fastly cache and was seen serving an entry-less channel for
-# hours after the 00:00 ET rebuild, which reads as "no papers today".
-RSS_URL = "https://rss.arxiv.org/rss/{category}"
+LIST_URL = "https://arxiv.org/list/{category}/new?show=2000"
 ARXIV_URL = "https://arxiv.org/abs/{arxiv_id}"
-ANNOUNCE_RE = re.compile(r"Announce Type:\s*([a-z-]+)", re.IGNORECASE)
+CRAWL_DELAY = 15.0
+FETCH_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+
 VERSION_RE = re.compile(r"v\d+$")
-RSS_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+SECTION_COUNT_RE = re.compile(r"\(showing\s+(\d+)\s+of\s+(\d+)\s+entries?\)", re.IGNORECASE)
+SUBJECT_RE = re.compile(r"\(([a-z][a-z-]*(?:\.[A-Za-z0-9-]+)?)\)")
+
+ANNOUNCE_NEW = "new"
+ANNOUNCE_CROSS = "cross"
+ANNOUNCE_REPLACE = "replace"
 
 
 class ArxivError(PaperfeedError):
-    """An arXiv RSS feed could not be fetched."""
+    """An arXiv listing page could not be fetched."""
 
 
 @dataclass(frozen=True)
@@ -48,25 +61,12 @@ class Paper:
     announce_type: str
 
 
-def abstract_from_summary(summary: str) -> str:
-    """RSS descriptions look like 'arXiv:2401.00001v1 Announce Type: new \\nAbstract: …'."""
-    text = summary or ""
-    if "Abstract:" in text:
-        text = text.split("Abstract:", 1)[1]
-    else:
-        # No abstract at all: strip "arXiv:2410.01234v1 Announce Type: new" so an
-        # announcement without one is dropped rather than ranked on its id.
-        text = re.sub(r"arXiv:\S+", "", text)
-        text = ANNOUNCE_RE.sub("", text)
-    return collapse_whitespace(text)
-
-
 def arxiv_id_of(*candidates: str) -> str:
     """Extract a bare arXiv id ('2401.00001' or 'cond-mat/0601001') from a URL or OAI id."""
     for value in candidates:
         if not value:
             continue
-        match = re.search(r"arxiv\.org/(?:abs|pdf)/([^\s?#]+)", value)
+        match = re.search(r"(?:arxiv\.org)?/(?:abs|pdf)/([^\s?#]+)", value)
         if match:
             raw = match.group(1)
         else:
@@ -81,82 +81,162 @@ def arxiv_id_of(*candidates: str) -> str:
     return ""
 
 
-def _announce_type(entry: dict[str, Any], summary: str) -> str:
-    value = str(entry.get("arxiv_announce_type") or "").strip()
-    if value:
-        return value
-    match = ANNOUNCE_RE.search(summary or "")
-    return match.group(1).lower() if match else ""
+def _section_type(heading: str) -> str:
+    lowered = heading.lower()
+    if "new submission" in lowered:
+        return ANNOUNCE_NEW
+    if "cross" in lowered:
+        return ANNOUNCE_CROSS
+    if "replacement" in lowered:
+        return ANNOUNCE_REPLACE
+    return ""
 
 
-def parse_feed(content: bytes, *, category: str, announce_types: list[str]) -> list[Paper]:
-    """Parse one RSS document into papers, dropping non-configured announce types."""
-    feed = feedparser.parse(content)
-    if feed.get("bozo") and not feed.get("entries"):
-        log.warning("%s: unparseable RSS (%s)", category, feed.get("bozo_exception"))
-        return []
+def _entries(dl: Tag) -> Iterator[tuple[Tag, Tag]]:
+    """Yield the page's `<dt>`/`<dd>` pairs in document order."""
+    pending: Tag | None = None
+    for child in dl.children:
+        if not isinstance(child, Tag):
+            continue
+        if child.name == "dt":
+            pending = child
+        elif child.name == "dd" and pending is not None:
+            yield pending, child
+            pending = None
 
-    allowed = {value.lower() for value in announce_types}
+
+def _labelled(div: Tag, label: str) -> str:
+    """Read a listing field such as `<span>Title:</span> …` without the label."""
+    text = collapse_whitespace(div.get_text(" ", strip=True))
+    prefix = f"{label}:"
+    return text[len(prefix) :].strip() if text.startswith(prefix) else text
+
+
+def _subjects(dd: Tag) -> tuple[str, ...]:
+    div = dd.find("div", class_="list-subjects")
+    if div is None:
+        return ()
+    text = _labelled(div, "Subjects")
+    return tuple(dict.fromkeys(SUBJECT_RE.findall(text)))
+
+
+def _authors(dd: Tag) -> tuple[str, ...]:
+    # The links are one author each, so a comma inside a name cannot split it.
+    links = dd.select(".list-authors a")
+    if links:
+        names = (collapse_whitespace(link.get_text(" ", strip=True)) for link in links)
+        return tuple(name for name in names if name)
+    div = dd.find("div", class_="list-authors")
+    if div is None:
+        return ()
+    return tuple(
+        name for part in _labelled(div, "Authors").split(",") if (name := collapse_whitespace(part))
+    )
+
+
+def _parse_entry(dt: Tag, dd: Tag, *, category: str, announce_type: str) -> Paper | None:
+    link = dt.find("a", href=re.compile(r"/abs/"))
+    arxiv_id = arxiv_id_of(str(link["href"])) if link else ""
+    title_div = dd.find("div", class_="list-title")
+    title = _labelled(title_div, "Title") if title_div else ""
+    abstract_p = dd.find("p", class_="mathjax")
+    abstract = collapse_whitespace(abstract_p.get_text(" ", strip=True)) if abstract_p else ""
+    if not arxiv_id or not title or not abstract:
+        log.debug("%s: skipping incomplete entry %r", category, title or arxiv_id)
+        return None
+
+    return Paper(
+        arxiv_id=arxiv_id,
+        title=title,
+        authors=_authors(dd),
+        abstract=abstract,
+        url=ARXIV_URL.format(arxiv_id=arxiv_id),
+        categories=_subjects(dd) or (category,),
+        announce_type=announce_type,
+    )
+
+
+def parse_listing(content: bytes | str, *, category: str) -> list[Paper]:
+    """Parse one listing page, keeping new and cross entries."""
+    soup = BeautifulSoup(content, "html.parser")
+
     papers: list[Paper] = []
-
-    for entry in feed.get("entries", []):
-        summary = str(entry.get("summary") or "")
-        announce_type = _announce_type(entry, summary)
-        if announce_type and announce_type.lower() not in allowed:
-            continue
-        if not announce_type:
-            log.warning("%s: entry has no announce type; keeping it", category)
-
-        arxiv_id = arxiv_id_of(str(entry.get("link") or ""), str(entry.get("id") or ""))
-        title = collapse_whitespace(str(entry.get("title") or ""))
-        abstract = abstract_from_summary(summary)
-        if not arxiv_id or not title or not abstract:
-            log.debug("%s: skipping incomplete entry %r", category, title or arxiv_id)
+    for dl in soup.find_all("dl", id="articles"):
+        heading_tag = dl.find("h3")
+        heading = collapse_whitespace(heading_tag.get_text(" ", strip=True)) if heading_tag else ""
+        announce_type = _section_type(heading)
+        if announce_type not in (ANNOUNCE_NEW, ANNOUNCE_CROSS):
             continue
 
-        authors = tuple(
-            name
-            for author in str(entry.get("author") or "").split(",")
-            if (name := collapse_whitespace(author))
-        )
-        tags = tuple(str(tag.get("term", "")) for tag in entry.get("tags", []) if tag.get("term"))
-        categories = tags or (category,)
-
-        papers.append(
-            Paper(
-                arxiv_id=arxiv_id,
-                title=title,
-                authors=authors,
-                abstract=abstract,
-                url=ARXIV_URL.format(arxiv_id=arxiv_id),
-                categories=categories,
-                announce_type=announce_type or "unknown",
+        shown = SECTION_COUNT_RE.search(heading)
+        if shown and int(shown.group(1)) < int(shown.group(2)):
+            log.warning(
+                "%s: %r shows %s of %s entries; the rest are off the page",
+                category,
+                heading,
+                shown.group(1),
+                shown.group(2),
             )
-        )
+
+        for dt, dd in _entries(dl):
+            paper = _parse_entry(dt, dd, category=category, announce_type=announce_type)
+            if paper is not None:
+                papers.append(paper)
 
     log.info("%s: %d candidate(s)", category, len(papers))
     return papers
 
 
-def fetch(settings: ArxivSettings, *, client: httpx.Client | None = None) -> list[Paper]:
-    """Fetch every configured category, dedupe by arXiv id, cap the candidate count."""
-    seen: dict[str, Paper] = {}
+def iter_listings(
+    settings: ArxivSettings,
+    *,
+    client: httpx.Client | None = None,
+    delay: float = CRAWL_DELAY,
+) -> Iterator[list[Paper]]:
+    """Yield one category's papers at a time, spacing requests by `delay` seconds.
+
+    The caller can rank a page while the crawl delay for the next one elapses:
+    the delay is measured from the previous response, not from the previous yield.
+    """
+    last_response: float | None = None
     with net.open_client(
-        headers={"User-Agent": USER_AGENT}, timeout=RSS_TIMEOUT, reuse=client
+        headers={"User-Agent": USER_AGENT}, timeout=FETCH_TIMEOUT, reuse=client
     ) as http:
         for category in settings.categories:
+            if last_response is not None and delay > 0:
+                remaining = delay - (time.monotonic() - last_response)
+                if remaining > 0:
+                    log.debug("%s: waiting %.1fs for the crawl delay", category, remaining)
+                    time.sleep(remaining)
+
             try:
-                response = http.get(RSS_URL.format(category=category))
+                response = http.get(LIST_URL.format(category=category))
                 response.raise_for_status()
             except httpx.HTTPError as exc:
                 raise ArxivError(f"fetching {category}: {exc}") from exc
-            for paper in parse_feed(
-                response.content, category=category, announce_types=settings.announce_types
-            ):
-                seen.setdefault(paper.arxiv_id, paper)
+            last_response = time.monotonic()
 
-    papers = list(seen.values())
-    dropped = max(0, len(papers) - settings.max_candidates)
-    if dropped:
-        log.info("capping candidates at %d (−%d)", settings.max_candidates, dropped)
-    return papers[: settings.max_candidates]
+            papers = parse_listing(response.content, category=category)
+            if len(papers) > settings.max_candidates:
+                log.info(
+                    "%s: capping candidates at %d (−%d)",
+                    category,
+                    settings.max_candidates,
+                    len(papers) - settings.max_candidates,
+                )
+                papers = papers[: settings.max_candidates]
+            yield papers
+
+
+def fetch(
+    settings: ArxivSettings,
+    *,
+    client: httpx.Client | None = None,
+    delay: float = CRAWL_DELAY,
+) -> list[Paper]:
+    """Fetch every configured category, dedupe by arXiv id."""
+    seen: dict[str, Paper] = {}
+    for papers in iter_listings(settings, client=client, delay=delay):
+        for paper in papers:
+            seen.setdefault(paper.arxiv_id, paper)
+    return list(seen.values())

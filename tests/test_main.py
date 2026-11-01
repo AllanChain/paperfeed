@@ -28,7 +28,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(
         main, "load_profile", lambda _zotero: parse_profile(fixture_text("note.html"))
     )
-    monkeypatch.setattr(main.arxiv_source, "fetch", lambda _arxiv: [paper])
+    monkeypatch.setattr(main.arxiv_source, "iter_listings", lambda _arxiv: [[paper]])
     monkeypatch.setattr(main.rank, "rank", lambda *_a, **_k: [scored])
     monkeypatch.setattr(
         main.full_text, "attach", lambda scored, **_k: [Sourced(item) for item in scored]
@@ -127,7 +127,7 @@ def test_missing_webhook_fails_before_any_work(wired, monkeypatch, caplog) -> No
     settings = make_settings(feishu={"webhook_url": None})
     monkeypatch.setattr(main, "Settings", lambda: settings)
     fetched: list[int] = []
-    monkeypatch.setattr(main.arxiv_source, "fetch", lambda _arxiv: fetched.append(1) or [])
+    monkeypatch.setattr(main.arxiv_source, "iter_listings", lambda _arxiv: fetched.append(1) or [])
 
     assert main.run([]) == 2
     assert "PAPERFEED_FEISHU__WEBHOOK_URL" in caplog.text
@@ -205,3 +205,50 @@ def test_check_reports_success(monkeypatch, capsys) -> None:
 
     assert main.run(["--check"]) == 0
     assert "OK" in capsys.readouterr().out
+
+
+def test_ranking_dedupes_papers_across_categories(wired, monkeypatch) -> None:
+    first = make_paper(arxiv_id="2410.00001")
+    second = make_paper(arxiv_id="2410.00002")
+    third = make_paper(arxiv_id="2410.00003")
+    monkeypatch.setattr(
+        main.arxiv_source, "iter_listings", lambda _arxiv: [[first, second], [second, third]]
+    )
+    ranked: list[list[str]] = []
+
+    def rank(_profile, papers, **_kwargs):
+        ranked.append([paper.arxiv_id for paper in papers])
+        return [make_scored(paper=paper, final=0.8) for paper in papers]
+
+    monkeypatch.setattr(main.rank, "rank", rank)
+
+    assert main.run(["--dry-run"]) == 0
+    assert ranked == [["2410.00001", "2410.00002"], ["2410.00003"]]
+
+
+def test_no_fresh_listing_sends_nothing(wired, monkeypatch) -> None:
+    monkeypatch.setattr(main.arxiv_source, "iter_listings", lambda _arxiv: [])
+
+    assert main.run([]) == 0
+    assert wired["sent"] == []
+
+
+def test_debug_ranks_at_most_ten_across_categories(wired, monkeypatch) -> None:
+    settings = make_settings(debug=True)
+    monkeypatch.setattr(main, "Settings", lambda: settings)
+    papers = [make_paper(arxiv_id=f"2410.{n:05d}") for n in range(12)]
+    monkeypatch.setattr(
+        main.arxiv_source,
+        "iter_listings",
+        lambda _arxiv: [papers[n : n + 4] for n in range(0, 12, 4)],
+    )
+    ranked: list[str] = []
+
+    def rank(_profile, batch, **_kwargs):
+        ranked.extend(paper.arxiv_id for paper in batch)
+        return [make_scored(paper=paper, final=0.8) for paper in batch]
+
+    monkeypatch.setattr(main.rank, "rank", rank)
+
+    assert main.run(["--dry-run"]) == 0
+    assert len(ranked) == 10

@@ -9,7 +9,7 @@ from paperfeed.config import ConfigError, Settings
 def test_defaults_boot_without_any_env() -> None:
     settings = Settings(_env_file=None)
     assert settings.arxiv.categories == ["cond-mat.str-el", "quant-ph"]
-    assert settings.arxiv.announce_types == ["new", "cross"]
+    assert settings.arxiv.max_candidates == 300
     assert settings.bailian.decision_model == "decision-model-preview"
     assert settings.bailian.chat_model == "qwen3.8-flash"
     assert settings.bailian.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -25,7 +25,6 @@ def test_nested_env_and_json_lists(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PAPERFEED_ZOTERO__USER_ID", "7654321")
     monkeypatch.setenv("PAPERFEED_ZOTERO__COLLECTION", "physics/papers")
     monkeypatch.setenv("PAPERFEED_ARXIV__CATEGORIES", '["cond-mat.mtrl-sci","physics.comp-ph"]')
-    monkeypatch.setenv("PAPERFEED_ARXIV__ANNOUNCE_TYPES", '["new"]')
     monkeypatch.setenv("PAPERFEED_ARXIV__MAX_CANDIDATES", "25")
     monkeypatch.setenv("PAPERFEED_BAILIAN__CHAT_EXTRA_BODY", '{"enable_thinking": false}')
     monkeypatch.setenv("PAPERFEED_MIN_SCORE", "0.5")
@@ -36,7 +35,6 @@ def test_nested_env_and_json_lists(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.zotero.user_id == "7654321"
     assert settings.zotero.collection == "physics/papers"
     assert settings.arxiv.categories == ["cond-mat.mtrl-sci", "physics.comp-ph"]
-    assert settings.arxiv.announce_types == ["new"]
     assert settings.arxiv.max_candidates == 25
     assert settings.bailian.chat_extra_body == {"enable_thinking": False}
     assert settings.min_score == pytest.approx(0.5)

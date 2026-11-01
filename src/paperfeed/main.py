@@ -62,18 +62,38 @@ def _build(settings: Settings, bailian: Bailian) -> dict[str, Any] | None:
     """Run the feed pipeline. Returns the card message, or None when nothing is sent."""
     profile = load_profile(settings.zotero)
 
-    candidates = arxiv_source.fetch(settings.arxiv)
-    if settings.debug:
-        candidates = candidates[:DEBUG_CANDIDATES]
-    log.info("%d candidate(s) to rank", len(candidates))
+    # Rank each category while the crawl delay for the next one elapses. Dedupe
+    # before ranking: a cross-listed paper appears on several category pages and
+    # must not cost two decision calls.
+    candidates: list[arxiv_source.Paper] = []
+    scored: list[rank.ScoredPaper] = []
+    seen: set[str] = set()
 
-    scored = rank.rank(
-        profile,
-        candidates,
-        bailian=bailian,
-        avoid_penalty=settings.avoid_penalty,
-        concurrency=settings.bailian.decision_concurrency,
-    )
+    for batch in arxiv_source.iter_listings(settings.arxiv):
+        fresh = [paper for paper in batch if paper.arxiv_id not in seen]
+        seen.update(paper.arxiv_id for paper in fresh)
+        if settings.debug:
+            fresh = fresh[: max(0, DEBUG_CANDIDATES - len(scored))]
+        candidates.extend(fresh)
+        if fresh:
+            scored.extend(
+                rank.rank(
+                    profile,
+                    fresh,
+                    bailian=bailian,
+                    avoid_penalty=settings.avoid_penalty,
+                    concurrency=settings.bailian.decision_concurrency,
+                )
+            )
+        if settings.debug and len(scored) >= DEBUG_CANDIDATES:
+            break
+
+    scored.sort(key=rank.sort_key)
+    log.info("%d candidate(s) collected", len(candidates))
+    if not candidates:
+        log.info("no fresh papers on the listing pages; not sending")
+        return None
+
     kept = rank.select_top(scored, min_score=settings.min_score, max_papers=settings.max_papers)
     log.info(
         "kept %d paper(s) at min_score=%.2f%s",

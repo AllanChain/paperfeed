@@ -24,7 +24,7 @@ uv run paperfeed --dry-run
 | Settings, env names, defaults | `src/paperfeed/config.py` |
 | Zotero collection and profile loading | `src/paperfeed/zotero.py` |
 | Profile-note HTML parsing | `src/paperfeed/profile_note.py` |
-| arXiv RSS fetch, announce filter, dedupe | `src/paperfeed/arxiv_source.py` |
+| arXiv HTML listing fetch, section filter, dedupe | `src/paperfeed/arxiv_source.py` |
 | Per-paper full-text HTML fetch and body extraction | `src/paperfeed/full_text.py` |
 | Ranking payload, levels, score math, selection | `src/paperfeed/rank.py` |
 | Description prompt and failure handling | `src/paperfeed/describe.py` |
@@ -40,6 +40,10 @@ User-facing setup, tuning, and troubleshooting: `README.md`.
 
 ## Invariants
 
+- Candidates come from `/list/<category>/new`: only the new and cross sections, never
+  replacements. The cap is per category, applied before cross-category dedupe.
+  Listing requests are 15 s apart (arXiv's `robots.txt`); ranking runs between
+  pages and usually covers the wait.
 - A missing or invalid profile note is a hard failure; do not invent a generic feed.
 - Reportable failures are logged without a traceback and exit 1; config errors exit 2.
 - Ranking is one call per paper; a per-paper failure scores 0 and does not fail the run.
