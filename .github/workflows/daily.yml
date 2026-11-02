@@ -1,11 +1,10 @@
 name: daily
 
 on:
-  # arXiv announces Sun–Thu at 20:00 ET for the next day. The cron runs 29
-  # minutes later.
+  # arXiv announces Sun–Thu at 20:00 ET for the next day.
   # Pre-compensate GitHub Actions queue delay
   schedule:
-    - cron: "29 20 * * 0-4"
+    - cron: "29 19 * * 0-4"
       timezone: "America/New_York"
   workflow_dispatch:
 
