@@ -7,8 +7,10 @@
 
 A daily, personalized arXiv feed, delivered as one styled Feishu (Lark) card.
 Interests live in a Zotero collection plus a single profile note; ranking is
-done by a decision model, descriptions by an LLM, and the whole thing runs on a
-GitHub Actions cron. No server, no database, no state.
+done by a decision model, descriptions by an LLM. The whole thing is one command,
+`paperfeed`, that you point a scheduler at — cron, a systemd timer, a container
+job, or the GitHub Actions workflows this repo ships. No server, no database, no
+state.
 
 ## How it works
 
@@ -20,8 +22,8 @@ GitHub Actions cron. No server, no database, no state.
    the new and cross sections and dropping replacements. Cross-listed papers are
    deduped by arXiv id. Requests are 15 s apart (arXiv's `robots.txt`), and
    ranking runs during that wait. A 429 is retried with a 30 s-first backoff,
-   because the limit is per IP and a shared runner can be refused even at that
-   spacing.
+   because the limit is per IP and a shared or cloud host can be refused even at
+   that spacing.
 3. **Rank** — one `decision-model-preview` (System One) call per paper, two
    questions: relevance as a 4-level `score` (expected level index ÷ 3) and
    `avoid` as a `noul` probability. `final = max(0, relevance − 0.5 · P(avoid))`.
@@ -138,9 +140,22 @@ uv run paperfeed --dry-run   # prints the card JSON, sends nothing
 uv run paperfeed             # sends
 ```
 
-### 5. GitHub Actions
+### 5. Scheduling
 
-Push the repo, then add:
+`paperfeed` is a single command that reads its settings from the environment (or
+`.env`), builds one card and exits. Anything that can run a command on a timer
+works: cron, a systemd timer, launchd, a container job scheduler, or a CI
+scheduler. `uv run paperfeed` is the whole contract.
+
+Two things are worth arranging in whatever scheduler you use:
+
+- **Run after arXiv's announcement.** New listings appear Sun–Thu at 20:00 ET.
+  A run before that sees the previous day's papers.
+- **Do not overlap runs.** Two runs at once both send, and the card arrives
+twice. There is no cross-run lock in the code; the scheduler owns that.
+
+The repo ships a GitHub Actions setup as one concrete way to do both. Push the
+repo, then add:
 
 | Kind | Name | Value |
 |---|---|---|
@@ -153,12 +168,17 @@ Push the repo, then add:
 | Variable | `PAPERFEED_ZOTERO__NOTE_TITLE` | e.g. `paperfeed profile` |
 | Variable | `PAPERFEED_ARXIV__CATEGORIES` | JSON list, e.g. `["cond-mat.str-el","quant-ph"]` |
 
+`daily.yml` runs the real feed Sun–Thu at 20:29 ET, 29 minutes after arXiv's
+20:00 ET announcement, and on manual `workflow_dispatch`; it never runs on
+pushes, so a push cannot send a card. Its `concurrency` group is what keeps a
+manual run and the cron from delivering together. Run the daily workflow once by
+hand and confirm the card renders before trusting the schedule.
+
 `ci.yml` runs lint, formatting, type checks, and tests on every push and pull
-request. `daily.yml` runs the real feed Sun–Thu at 20:29 ET, 29 minutes after
-arXiv's 20:00 ET announcement, and on manual `workflow_dispatch`; it never runs
-on pushes, so a push cannot send a card. Run
-the daily workflow once by hand and confirm the card renders before trusting the
-cron.
+request. It is the same four commands as the Development section below, so a
+local `uv run ruff check && uv run ruff format --check && uv run mypy && uv run
+pytest -q` covers the same ground without GitHub. Neither workflow is required
+to deliver the feed: a host with `.env` populated needs only `uv run paperfeed`.
 
 ## Tuning
 
@@ -191,7 +211,7 @@ knob; the criteria wording is the lever, so tighten the levels before raising
 | A run keeps nothing | `min_score` too high for the profile, or the note's `Topics` are too narrow |
 | A description reads like the abstract | that paper has no arXiv HTML (`arxiv.org/html/<id>` 404s). arXiv renders HTML only for LaTeX submissions it converted successfully — roughly one paper in six — and the description falls back to the abstract |
 | The card's token count is below the DashScope bill | the foot note counts only responses the run received; an attempt retried by the HTTP client or a request that failed outright consumed tokens without reporting usage |
-| A run fails with `429` on a listing page | arXiv throttles `/list` per IP and GitHub runners share IPs; the fetch retries with a 30 s-first backoff, and only a refusal that survives 3 attempts fails the run |
+| A run fails with `429` on a listing page | arXiv throttles `/list` per IP and shared or cloud hosts share IPs; the fetch retries with a 30 s-first backoff, and only a refusal that survives 3 attempts fails the run |
 
 ## Development
 

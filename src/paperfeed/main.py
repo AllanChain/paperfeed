@@ -172,7 +172,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     except PaperfeedError as exc:
         log.error("%s", exc)
         return 1
-    except Exception:  # noqa: BLE001 - a cron job should log, not dump a traceback
+    except Exception:  # noqa: BLE001 - an unattended run should log, not dump a traceback
         log.exception("unexpected failure")
         return 1
 

@@ -12,9 +12,9 @@ arXiv id with the version suffix stripped.
 arxiv.org/robots.txt asks for a 15 s crawl delay on `/list`. The delay is
 measured from the previous response, and ranking runs between pages, so most of
 the wait is already spent by the time the next page is due. That delay assumes
-this run is the only client on its IP; a shared runner can still be refused
-with 429, so a listing fetch is retried with a rate-limit-sized backoff before
-the run gives up.
+this run is the only client on its IP; a shared or cloud host can still be
+refused with 429, so a listing fetch is retried with a rate-limit-sized backoff
+before the run gives up.
 """
 
 from __future__ import annotations
