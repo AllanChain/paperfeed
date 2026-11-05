@@ -19,7 +19,9 @@ GitHub Actions cron. No server, no database, no state.
 2. **arXiv** — one HTML listing fetch per category (`/list/<category>/new`), keeping
    the new and cross sections and dropping replacements. Cross-listed papers are
    deduped by arXiv id. Requests are 15 s apart (arXiv's `robots.txt`), and
-   ranking runs during that wait.
+   ranking runs during that wait. A 429 is retried with a 30 s-first backoff,
+   because the limit is per IP and a shared runner can be refused even at that
+   spacing.
 3. **Rank** — one `decision-model-preview` (System One) call per paper, two
    questions: relevance as a 4-level `score` (expected level index ÷ 3) and
    `avoid` as a `noul` probability. `final = max(0, relevance − 0.5 · P(avoid))`.
@@ -189,6 +191,7 @@ knob; the criteria wording is the lever, so tighten the levels before raising
 | A run keeps nothing | `min_score` too high for the profile, or the note's `Topics` are too narrow |
 | A description reads like the abstract | that paper has no arXiv HTML (`arxiv.org/html/<id>` 404s). arXiv renders HTML only for LaTeX submissions it converted successfully — roughly one paper in six — and the description falls back to the abstract |
 | The card's token count is below the DashScope bill | the foot note counts only responses the run received; an attempt retried by the HTTP client or a request that failed outright consumed tokens without reporting usage |
+| A run fails with `429` on a listing page | arXiv throttles `/list` per IP and GitHub runners share IPs; the fetch retries with a 30 s-first backoff, and only a refusal that survives 3 attempts fails the run |
 
 ## Development
 

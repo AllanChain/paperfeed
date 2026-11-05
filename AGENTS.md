@@ -43,7 +43,9 @@ User-facing setup, tuning, and troubleshooting: `README.md`.
 - Candidates come from `/list/<category>/new`: only the new and cross sections, never
   replacements. The cap is per category, applied before cross-category dedupe.
   Listing requests are 15 s apart (arXiv's `robots.txt`); ranking runs between
-  pages and usually covers the wait.
+  pages and usually covers the wait. A 429 means arXiv's per-IP limit is busy
+  (GitHub runners share IPs), so the GET is retried with a 30 s-first backoff;
+  only a refusal that survives 3 attempts fails the run.
 - A missing or invalid profile note is a hard failure; do not invent a generic feed.
 - Reportable failures are logged without a traceback and exit 1; config errors exit 2.
 - Ranking is one call per paper; a per-paper failure scores 0 and does not fail the run.

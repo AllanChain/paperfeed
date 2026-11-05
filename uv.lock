@@ -601,7 +601,7 @@ requires-dist = [
     { name = "openai", specifier = ">=1.40" },
     { name = "pydantic-settings", specifier = ">=2.4" },
     { name = "pyzotero", specifier = ">=1.6" },
-    { name = "tenacity", specifier = ">=8.3" },
+    { name = "tenacity", specifier = ">=9.2.1" },
 ]
 
 [package.metadata.requires-dev]

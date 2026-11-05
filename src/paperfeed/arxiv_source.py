@@ -11,7 +11,10 @@ arXiv id with the version suffix stripped.
 
 arxiv.org/robots.txt asks for a 15 s crawl delay on `/list`. The delay is
 measured from the previous response, and ranking runs between pages, so most of
-the wait is already spent by the time the next page is due.
+the wait is already spent by the time the next page is due. That delay assumes
+this run is the only client on its IP; a shared runner can still be refused
+with 429, so a listing fetch is retried with a rate-limit-sized backoff before
+the run gives up.
 """
 
 from __future__ import annotations
@@ -35,6 +38,9 @@ log = logging.getLogger(__name__)
 LIST_URL = "https://arxiv.org/list/{category}/new?show=2000"
 ARXIV_URL = "https://arxiv.org/abs/{arxiv_id}"
 CRAWL_DELAY = 15.0
+# First retry wait for a refused listing: a per-IP limit needs longer than the
+# 1 s an API retry uses, and the next attempt doubles this (jittered, max 4x).
+RETRY_WAIT = 30.0
 FETCH_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
 VERSION_RE = re.compile(r"v\d+$")
@@ -197,6 +203,7 @@ def iter_listings(
 
     The caller can rank a page while the crawl delay for the next one elapses:
     the delay is measured from the previous response, not from the previous yield.
+    A transient refusal (429, 5xx, network) is retried before `ArxivError` is raised.
     """
     last_response: float | None = None
     with net.open_client(
@@ -210,9 +217,13 @@ def iter_listings(
                     time.sleep(remaining)
 
             try:
-                response = http.get(LIST_URL.format(category=category))
+                response = net.get(
+                    http,
+                    LIST_URL.format(category=category),
+                    wait_seconds=RETRY_WAIT,
+                )
                 response.raise_for_status()
-            except httpx.HTTPError as exc:
+            except (net.Transient, httpx.HTTPError) as exc:
                 raise ArxivError(f"fetching {category}: {exc}") from exc
             last_response = time.monotonic()
 

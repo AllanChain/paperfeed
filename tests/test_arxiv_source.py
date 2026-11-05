@@ -4,13 +4,19 @@ import logging
 
 import httpx
 import pytest
+import tenacity.nap
 
 from conftest import fixture_bytes, make_settings
 from paperfeed import arxiv_source
-from paperfeed.arxiv_source import arxiv_id_of, fetch, iter_listings, parse_listing
+from paperfeed.arxiv_source import ArxivError, arxiv_id_of, fetch, iter_listings, parse_listing
 
 QUANT_PH = fixture_bytes("list_quant_ph.html")
 COND_MAT = fixture_bytes("list_cond_mat.html")
+
+
+@pytest.fixture(autouse=True)
+def no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tenacity.nap.time, "sleep", lambda _seconds: None)
 
 
 def test_keeps_new_and_cross_but_not_replacements() -> None:
@@ -127,3 +133,52 @@ def test_crawl_delay_is_measured_from_the_previous_response(
 
     assert len(slept) == 1
     assert 0 < slept[0] <= 15
+
+
+def _page_for(request: httpx.Request) -> httpx.Response:
+    category = request.url.path.split("/list/", 1)[1].split("/", 1)[0]
+    pages = {"quant-ph": QUANT_PH, "cond-mat.str-el": COND_MAT}
+    return httpx.Response(200, content=pages[category])
+
+
+def test_fetch_retries_a_rate_limited_listing() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        # A shared IP can trip arXiv's per-IP limit even at the crawl delay.
+        return httpx.Response(429, text="slow down") if len(calls) == 1 else _page_for(request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    papers = fetch(_settings(max_candidates=100).arxiv, client=client, delay=0)
+
+    assert len(calls) == 3  # one refusal, then two pages
+    assert papers[0].arxiv_id == "2610.37745"
+
+
+def test_fetch_gives_up_after_three_refused_attempts() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(429, text="slow down")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(ArxivError, match="gave up after 3 attempts.*429"):
+        fetch(_settings().arxiv, client=client, delay=0)
+
+    assert len(calls) == 3
+
+
+def test_fetch_does_not_retry_a_forbidden_listing() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(403, text="go away")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(ArxivError, match="403"):
+        fetch(_settings().arxiv, client=client, delay=0)
+
+    assert len(calls) == 1
